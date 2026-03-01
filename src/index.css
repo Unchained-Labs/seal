@@ -553,6 +553,9 @@ kbd {
 }
 
 .app-tab-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   border: 1px solid var(--app-muted-border);
   background: color-mix(in oklab, var(--app-card) 85%, var(--app-surface) 15%);
   color: var(--app-subtle);
@@ -596,6 +599,10 @@ kbd {
 
 .app-terminal-entry__time {
   color: var(--app-muted-text);
+}
+
+.app-terminal-entry__cwd {
+  color: color-mix(in oklab, var(--app-subtle) 72%, var(--app-accent) 28%);
 }
 
 .app-terminal-entry__prompt {

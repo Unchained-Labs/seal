@@ -46,10 +46,11 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - running/completion duration labels
   - latest streamed output preview line
 - Modal-level runtime feedback:
-  - full live output panel with normalized stream formatting
+  - left result panel includes live build stream tail with normalized formatting
   - result panel
   - custom voice player component for recorded prompts (single control set)
-  - tabbed preview panel (`Terminal` / `Browser`) with fullscreen toggle
+  - icon-based tabbed preview panel (`Workspace Shell` / `Browser`) with fullscreen toggle
+  - workspace shell sessions keep current working directory across commands
 
 ## Data Sources
 

@@ -88,6 +88,7 @@ export interface WorkspaceCommandRequest {
   workspace_id?: string;
   command: string;
   working_directory?: string;
+  shell_session_id?: string;
   timeout_seconds?: number;
 }
 
@@ -95,6 +96,7 @@ export interface WorkspaceCommandResponse {
   workspace_id: string;
   command: string;
   working_directory: string;
+  shell_session_id?: string;
   exit_code: number | null;
   stdout: string;
   stderr: string;

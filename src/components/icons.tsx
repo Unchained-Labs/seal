@@ -16,6 +16,48 @@ export function TerminalIcon(props: IconProps) {
   );
 }
 
+export function BrowserIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2" />
+      <path d="M3.5 9h17" />
+      <circle cx="6.7" cy="7" r="0.8" fill="currentColor" />
+      <circle cx="9.6" cy="7" r="0.8" fill="currentColor" />
+      <circle cx="12.5" cy="7" r="0.8" fill="currentColor" />
+    </BaseIcon>
+  );
+}
+
+export function ExpandIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M8 3H3v5" />
+      <path d="M16 3h5v5" />
+      <path d="M8 21H3v-5" />
+      <path d="M16 21h5v-5" />
+      <path d="M3 3l6 6" />
+      <path d="M21 3l-6 6" />
+      <path d="M3 21l6-6" />
+      <path d="M21 21l-6-6" />
+    </BaseIcon>
+  );
+}
+
+export function CompressIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M9 9H4V4" />
+      <path d="M15 9h5V4" />
+      <path d="M9 15H4v5" />
+      <path d="M15 15h5v5" />
+      <path d="M4 4l6 6" />
+      <path d="M20 4l-6 6" />
+      <path d="M4 20l6-6" />
+      <path d="M20 20l-6-6" />
+    </BaseIcon>
+  );
+}
+
 export function ThemeDarkIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
