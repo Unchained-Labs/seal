@@ -1,13 +1,15 @@
 # Seal
 
-Seal is the frontend control room for Otter job orchestration. It focuses on fast task creation, live execution visibility, and queue management through a Kanban board.
+[![CI](https://github.com/Unchained-Labs/seal/actions/workflows/ci.yml/badge.svg)](https://github.com/Unchained-Labs/seal/actions/workflows/ci.yml)
+
+Seal is the voice-first frontend for Otter orchestration. It focuses on fast prompt capture, live execution feedback, and queue control through a Kanban board.
 
 ## Stack
 
 - Node 22
 - Vite
 - React + TypeScript
-- Tailwind CSS + custom CSS design tokens
+- Tailwind CSS + custom CSS tokens
 
 ## Setup
 
@@ -19,7 +21,7 @@ npm install
 npm run dev
 ```
 
-### Connectivity mode
+## Connectivity Mode
 
 - Default: `VITE_OTTER_URL=/api` (same-origin API path)
 - Dev proxy target: `VITE_OTTER_PROXY_TARGET=http://localhost:8080`
@@ -27,15 +29,26 @@ npm run dev
 
 This avoids CORS and host mismatch issues between browser, Docker, and local CLI usage.
 
-## Current UX + Product Flow
+## UX Flow
 
-1. User can record a voice command from the centered composer (mic button).
-2. Voice upload goes to Otter (`POST /v1/voice/prompts`), Otter uses Lavoix STT, and enqueues the transcript.
-3. User can still refine/edit text and submit with `Enter` (`Shift+Enter` for newline).
-4. Task appears in Todo.
-5. Worker claims queued job and status moves to Running.
-6. Live output streams to Seal via SSE `output_chunk` events.
-7. Job moves to Done or Blocked/Failed with detail modal + output/preview + task terminal.
+1. User records a voice command in the prompt panel (`Shift+Space` push-to-talk supported).
+2. Voice upload hits Otter `POST /v1/voice/prompts` and is transcribed via Lavoix.
+3. Transcript is shown and the job is enqueued.
+4. Todo ordering controls priority via drag/drop.
+5. Running jobs stream live chunks into the board.
+6. Completed/failed jobs keep modal details with output, preview, terminal, and voice replay.
+
+## Runtime Feedback
+
+- Live stream via `GET /v1/events/stream` with named lifecycle events and `output_chunk`.
+- Card-level runtime feedback:
+  - status bubbles with icons and color coding
+  - running/completion duration labels
+  - latest streamed output preview line
+- Modal-level runtime feedback:
+  - full live output panel
+  - result panel
+  - custom voice player component for recorded prompts
 
 ## Data Sources
 
@@ -44,33 +57,23 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - `GET /v1/history`
 - Per-job hydration:
   - `GET /v1/jobs/{id}`
-- Live stream:
-  - `GET /v1/events/stream` (named events + `output_chunk`)
+- Live events:
+  - `GET /v1/events/stream`
 
-## Queue Priority Model
+## Workspace UX
 
-- Composer no longer asks for manual numeric priority.
-- Todo column order is the user-facing priority model.
-- Drag/drop in Todo triggers `PATCH /v1/queue/{job_id}` updates.
-
-## Workspace Model in UI
-
-- Default mode is `Auto workspace (server default)`.
-- Optional workspace picker is still available for explicit routing.
-- Workspace explorer calls:
-  - `GET /v1/workspaces/{id}/tree`
-  - `GET /v1/workspaces/{id}/file`
-  - `POST /v1/workspaces/command` (supports auto workspace)
+- Main page runs commands in default auto workspace (`POST /v1/workspaces/command`).
+- Prompting flow does not require manual workspace selection.
+- Task modal terminal can execute in the job workspace when available.
 
 ## Observability
 
-- API exchange logs in browser console (`[seal-api] ...`) with method/path/status/latency.
-- SSE event logs in browser console (`[seal-events] ...`).
-- Backend health indicator in header with hover status.
+- API logs in browser console (`[seal-api] ...`) with method/path/status/latency.
+- Event logs in browser console (`[seal-events] ...`).
+- Backend health indicator with status tooltip.
 
 ## Theming
 
-- Light/dark themes with persistent preference.
-- Palette-driven style system (custom CSS vars in `src/index.css`).
-- Styled scrollbars for app containers and code/output panes.
-- Dark mode palette tuned to a deeper low-brightness theme.
+- Light/dark themes with persisted preference.
+- Palette-driven system in `src/index.css`.
+- Styled scrollbars and modern custom voice player styling.
