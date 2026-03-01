@@ -24,6 +24,14 @@ function formatDuration(ms: number): string {
   return `${secs}s`;
 }
 
+function formatCreatedAt(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) {
+    return "Unknown time";
+  }
+  return new Date(parsed).toLocaleString();
+}
+
 export function KanbanCard({
   item,
   onCancel,
@@ -37,6 +45,7 @@ export function KanbanCard({
   liveOutputPreview
 }: KanbanCardProps) {
   const { job, queue_rank } = item;
+  const createdAtLabel = formatCreatedAt(job.created_at);
   const createdMs = Date.parse(job.created_at);
   const updatedMs = Date.parse(job.updated_at);
   const nowMs = Date.now();
@@ -98,6 +107,7 @@ export function KanbanCard({
           </span>
         ) : null}
       </header>
+      <p className="text-[11px] text-[var(--app-muted-text)]">Created: {createdAtLabel}</p>
       <div className="mt-1">
         <span className={`app-status-bubble ${statusMeta.bubbleClass}`}>
           {statusMeta.icon}
