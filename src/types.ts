@@ -47,6 +47,13 @@ export interface HistoryItem {
   created_at: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
 export interface Workspace {
   id: string;
   project_id: string;
@@ -56,8 +63,51 @@ export interface Workspace {
   created_at: string;
 }
 
+export interface WorkspaceTreeEntry {
+  name: string;
+  relative_path: string;
+  kind: "file" | "directory";
+  size_bytes: number | null;
+}
+
+export interface WorkspaceTreeResponse {
+  workspace_id: string;
+  root_path: string;
+  base_path: string;
+  entries: WorkspaceTreeEntry[];
+}
+
+export interface WorkspaceFileResponse {
+  workspace_id: string;
+  relative_path: string;
+  content: string;
+  truncated: boolean;
+}
+
+export interface WorkspaceCommandRequest {
+  workspace_id?: string;
+  command: string;
+  working_directory?: string;
+  timeout_seconds?: number;
+}
+
+export interface WorkspaceCommandResponse {
+  workspace_id: string;
+  command: string;
+  working_directory: string;
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+  timed_out: boolean;
+}
+
 export interface EnqueuePromptRequest {
   workspace_id?: string;
   prompt: string;
   priority?: number;
+}
+
+export interface VoiceEnqueueResponse {
+  transcript: string;
+  job: Job;
 }

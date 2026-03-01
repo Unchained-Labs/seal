@@ -6,12 +6,31 @@ interface KanbanColumnProps {
   title: string;
   items: JobResponse[];
   onCancel?: (jobId: string) => void;
+  onOpen?: (jobId: string) => void;
+  hasVoiceForJob?: (jobId: string) => boolean;
+  isVoicePlayingForJob?: (jobId: string) => boolean;
+  onToggleVoice?: (jobId: string) => void;
+  enableDragSort?: boolean;
+  onDragStart?: (jobId: string) => void;
+  onDropOnCard?: (targetJobId: string) => void;
   icon?: ReactNode;
 }
 
-export function KanbanColumn({ title, items, onCancel, icon }: KanbanColumnProps) {
+export function KanbanColumn({
+  title,
+  items,
+  onCancel,
+  onOpen,
+  hasVoiceForJob,
+  isVoicePlayingForJob,
+  onToggleVoice,
+  enableDragSort = false,
+  onDragStart,
+  onDropOnCard,
+  icon
+}: KanbanColumnProps) {
   return (
-    <section className="app-column flex min-h-[22rem] flex-col gap-3 p-3">
+    <section className="app-column flex min-h-0 flex-col gap-3 p-3">
       <header className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
           {icon ? <span className="text-[var(--app-accent)]">{icon}</span> : null}
@@ -21,13 +40,26 @@ export function KanbanColumn({ title, items, onCancel, icon }: KanbanColumnProps
           {items.length}
         </span>
       </header>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
         {items.length === 0 ? (
           <div className="rounded border border-dashed border-[var(--app-muted-border)] p-3 text-xs text-[var(--app-muted-text)]">
             No jobs
           </div>
         ) : (
-          items.map((item) => <KanbanCard key={item.job.id} item={item} onCancel={onCancel} />)
+          items.map((item) => (
+            <KanbanCard
+              key={item.job.id}
+              item={item}
+              onCancel={onCancel}
+              onOpen={onOpen}
+              hasVoice={hasVoiceForJob?.(item.job.id) ?? false}
+              isVoicePlaying={isVoicePlayingForJob?.(item.job.id) ?? false}
+              onToggleVoice={onToggleVoice}
+              draggable={enableDragSort}
+              onDragStart={onDragStart}
+              onDropOnCard={onDropOnCard}
+            />
+          ))
         )}
       </div>
     </section>

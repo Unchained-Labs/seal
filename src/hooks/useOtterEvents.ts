@@ -29,6 +29,7 @@ export function useOtterEvents({ onEvent }: UseOtterEventsArgs) {
       "accepted",
       "queued",
       "started",
+      "output_chunk",
       "retry_queued",
       "completed",
       "failed",
