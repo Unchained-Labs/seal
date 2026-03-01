@@ -4,6 +4,8 @@ export interface Job {
   id: string;
   workspace_id: string;
   prompt: string;
+  preview_url: string | null;
+  is_paused: boolean;
   status: JobStatus;
   priority: number;
   schedule_at: string | null;
@@ -32,6 +34,7 @@ export interface QueueItem {
   job_id: string;
   workspace_id: string;
   prompt: string;
+  is_paused: boolean;
   priority: number;
   schedule_at: string | null;
   queue_rank: number;

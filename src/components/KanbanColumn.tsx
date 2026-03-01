@@ -6,6 +6,7 @@ interface KanbanColumnProps {
   title: string;
   items: JobResponse[];
   onCancel?: (jobId: string) => void;
+  onTogglePaused?: (jobId: string, paused: boolean) => void;
   onOpen?: (jobId: string) => void;
   hasVoiceForJob?: (jobId: string) => boolean;
   isVoicePlayingForJob?: (jobId: string) => boolean;
@@ -21,6 +22,7 @@ export function KanbanColumn({
   title,
   items,
   onCancel,
+  onTogglePaused,
   onOpen,
   hasVoiceForJob,
   isVoicePlayingForJob,
@@ -53,6 +55,7 @@ export function KanbanColumn({
               key={item.job.id}
               item={item}
               onCancel={onCancel}
+              onTogglePaused={onTogglePaused}
               onOpen={onOpen}
               hasVoice={hasVoiceForJob?.(item.job.id) ?? false}
               isVoicePlaying={isVoicePlayingForJob?.(item.job.id) ?? false}

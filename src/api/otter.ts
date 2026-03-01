@@ -233,6 +233,58 @@ export async function cancelJob(jobId: string): Promise<void> {
   });
 }
 
+export async function pauseJob(jobId: string): Promise<void> {
+  const startedAt = performance.now();
+  const path = `/v1/jobs/${jobId}/pause`;
+  logApi("request:start", { method: "POST", path });
+  const response = await fetch(`${OTTER_URL}${path}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", {
+    method: "POST",
+    path,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
+export async function resumeJob(jobId: string): Promise<void> {
+  const startedAt = performance.now();
+  const path = `/v1/jobs/${jobId}/resume`;
+  logApi("request:start", { method: "POST", path });
+  const response = await fetch(`${OTTER_URL}${path}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", {
+    method: "POST",
+    path,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
 export async function updateQueuePriority(jobId: string, priority: number): Promise<void> {
   const path = `/v1/queue/${jobId}`;
   const startedAt = performance.now();

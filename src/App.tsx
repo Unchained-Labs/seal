@@ -10,7 +10,9 @@ import {
   listHistory,
   listQueue,
   openRuntimeShellSocket,
+  pauseJob,
   restartRuntimeContainer,
+  resumeJob,
   runWorkspaceCommand,
   startRuntimeContainer,
   stopRuntimeContainer,
@@ -65,6 +67,8 @@ function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null)
       id: jobId,
       workspace_id: "",
       prompt,
+      preview_url: null,
+      is_paused: false,
       status: "queued",
       priority: rank ?? 100,
       schedule_at: null,
@@ -85,6 +89,8 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
       id: item.job_id,
       workspace_id: item.workspace_id,
       prompt: item.prompt,
+      preview_url: null,
+      is_paused: false,
       status: item.status,
       priority: 100,
       schedule_at: null,
@@ -525,6 +531,22 @@ export default function App() {
     }
   };
 
+  const handleTogglePaused = async (jobId: string, paused: boolean) => {
+    setError(null);
+    try {
+      if (paused) {
+        await resumeJob(jobId);
+      } else {
+        await pauseJob(jobId);
+      }
+      const refreshed = await getJob(jobId);
+      setJobs((prev) => ({ ...prev, [jobId]: refreshed }));
+    } catch (err: unknown) {
+      setBackendHealth("offline");
+      setError(String(err));
+    }
+  };
+
   const handleVoiceBlob = useCallback(
     async (audioBlob: Blob) => {
       if (!audioBlob.size) {
@@ -849,7 +871,12 @@ export default function App() {
   const autoDetectedUrl = useMemo(() => {
     const output = selectedJob?.output?.assistant_output ?? "";
     const live = selectedLiveOutput.join("\n");
-    return detectFirstUrl(`${output}\n${live}`) ?? selectedRuntime?.preferred_url ?? "";
+    return (
+      selectedJob?.job.preview_url ??
+      detectFirstUrl(`${output}\n${live}`) ??
+      selectedRuntime?.preferred_url ??
+      ""
+    );
   }, [selectedJob, selectedLiveOutput, selectedRuntime?.preferred_url]);
   const activePreviewUrl = normalizePreviewUrl(previewUrl.trim() || autoDetectedUrl);
   const handleRunTaskTerminalCommand = async () => {
@@ -1144,6 +1171,7 @@ export default function App() {
           <KanbanBoard
             jobs={jobList}
             onCancel={handleCancel}
+            onTogglePaused={handleTogglePaused}
             onOpen={setSelectedJobId}
             hasVoiceForJob={(jobId) => Boolean(voiceAudioByJob[jobId])}
             isVoicePlayingForJob={(jobId) => playingVoiceJobId === jobId}
