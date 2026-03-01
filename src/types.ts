@@ -85,6 +85,7 @@ export interface WorkspaceFileResponse {
 }
 
 export interface WorkspaceCommandRequest {
+  workspace_id?: string;
   command: string;
   working_directory?: string;
   timeout_seconds?: number;
@@ -104,4 +105,9 @@ export interface EnqueuePromptRequest {
   workspace_id?: string;
   prompt: string;
   priority?: number;
+}
+
+export interface VoiceEnqueueResponse {
+  transcript: string;
+  job: Job;
 }

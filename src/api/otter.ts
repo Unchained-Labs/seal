@@ -4,6 +4,7 @@ import type {
   JobResponse,
   Project,
   QueueItem,
+  VoiceEnqueueResponse,
   Workspace,
   WorkspaceCommandRequest,
   WorkspaceCommandResponse,
@@ -14,12 +15,10 @@ import type {
 function resolveOtterUrl(): string {
   const configured = import.meta.env.VITE_OTTER_URL?.trim();
   if (configured) {
-    return configured;
+    return configured.replace(/\/+$/, "");
   }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:8080`;
-  }
-  return "http://localhost:8080";
+  // Default to same-origin proxy to avoid CORS/hostname drift across dev and Docker.
+  return "/api";
 }
 
 const OTTER_URL = resolveOtterUrl();
@@ -98,13 +97,15 @@ export async function getWorkspaceFile(
 }
 
 export async function runWorkspaceCommand(
-  workspaceId: string,
+  workspaceId: string | undefined,
   payload: WorkspaceCommandRequest
 ): Promise<WorkspaceCommandResponse> {
-  return jsonRequest<WorkspaceCommandResponse>(`/v1/workspaces/${workspaceId}/command`, {
+  const path = workspaceId ? `/v1/workspaces/${workspaceId}/command` : "/v1/workspaces/command";
+  const body = workspaceId ? payload : { ...payload, workspace_id: payload.workspace_id ?? workspaceId };
+  return jsonRequest<WorkspaceCommandResponse>(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   });
 }
 
@@ -114,6 +115,44 @@ export async function enqueuePrompt(payload: EnqueuePromptRequest): Promise<JobR
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
+}
+
+export async function enqueueVoicePrompt(
+  audioBlob: Blob,
+  options?: { workspace_id?: string; language?: string; provider?: string }
+): Promise<VoiceEnqueueResponse> {
+  const form = new FormData();
+  form.append("file", audioBlob, "voice-command.webm");
+  if (options?.workspace_id) {
+    form.append("workspace_id", options.workspace_id);
+  }
+  if (options?.language) {
+    form.append("language", options.language);
+  }
+  if (options?.provider) {
+    form.append("provider", options.provider);
+  }
+
+  const startedAt = performance.now();
+  logApi("request:start", { method: "POST", path: "/v1/voice/prompts" });
+  const response = await fetch(`${OTTER_URL}/v1/voice/prompts`, {
+    method: "POST",
+    body: form
+  });
+  const elapsedMs = Math.round(performance.now() - startedAt);
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path: "/v1/voice/prompts",
+      status: response.status,
+      elapsedMs,
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", { method: "POST", path: "/v1/voice/prompts", status: response.status, elapsedMs });
+  return (await response.json()) as VoiceEnqueueResponse;
 }
 
 export async function getJob(jobId: string): Promise<JobResponse> {

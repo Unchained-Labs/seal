@@ -5,6 +5,7 @@ import {
   cancelJob,
   checkBackendHealth,
   enqueuePrompt,
+  enqueueVoicePrompt,
   getJob,
   getWorkspaceFile,
   getWorkspaceTree,
@@ -28,31 +29,6 @@ import type {
   WorkspaceFileResponse,
   WorkspaceTreeResponse
 } from "./types";
-
-interface SpeechRecognitionResultAlternative {
-  transcript: string;
-}
-
-interface SpeechRecognitionResultLike {
-  0: SpeechRecognitionResultAlternative;
-}
-
-interface SpeechRecognitionEventLike extends Event {
-  results: ArrayLike<SpeechRecognitionResultLike>;
-}
-
-interface SpeechRecognitionLike extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-}
-
-type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 type BackendHealth = "checking" | "online" | "offline";
 const JOB_CACHE_KEY = "seal-job-cache-v1";
 
@@ -127,8 +103,10 @@ export default function App() {
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [isListening, setIsListening] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
   const [projects, setProjects] = useState<Project[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -141,10 +119,19 @@ export default function App() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [modalFullscreen, setModalFullscreen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [modalCommand, setModalCommand] = useState("ls -la");
+  const [modalCommandRunning, setModalCommandRunning] = useState(false);
+  const [modalCommandResult, setModalCommandResult] = useState<WorkspaceCommandResponse | null>(null);
   const [draggedTodoJobId, setDraggedTodoJobId] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
   const healthCheckInFlightRef = useRef(false);
+  const voiceSupported =
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === "function" &&
+    typeof MediaRecorder !== "undefined";
 
   const refreshJobs = useCallback(async () => {
     const [queueResult, historyResult] = await Promise.allSettled([listQueue(300, 0), listHistory(1000)]);
@@ -275,49 +262,12 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    const speechCtor = (
-      window as unknown as {
-        SpeechRecognition?: SpeechRecognitionCtor;
-        webkitSpeechRecognition?: SpeechRecognitionCtor;
-      }
-    ).SpeechRecognition ??
-      (
-        window as unknown as {
-          SpeechRecognition?: SpeechRecognitionCtor;
-          webkitSpeechRecognition?: SpeechRecognitionCtor;
-        }
-      ).webkitSpeechRecognition;
-
-    if (!speechCtor) {
-      setVoiceSupported(false);
-      return;
-    }
-
-    setVoiceSupported(true);
-    const recognition = new speechCtor();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = "en-US";
-    recognition.onresult = (event) => {
-      const spoken = event.results[0]?.[0]?.transcript?.trim();
-      if (!spoken) {
-        return;
-      }
-      setPrompt((prev) => (prev ? `${prev} ${spoken}` : spoken));
-    };
-    recognition.onerror = () => {
-      setIsListening(false);
-    };
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-    recognitionRef.current = recognition;
-
     return () => {
-      recognition.stop();
-      recognitionRef.current = null;
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+      }
     };
-  }, []);
+  }, [recordedAudioUrl]);
 
   const handleEvent = useCallback((event: OtterEventPayload) => {
     if (event.event_type === "output_chunk") {
@@ -413,14 +363,55 @@ export default function App() {
     }
   };
 
+  const handleVoiceBlob = useCallback(
+    async (audioBlob: Blob) => {
+      if (!audioBlob.size) {
+        setError("Captured audio is empty.");
+        return;
+      }
+      if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+      }
+      setRecordedAudioUrl(URL.createObjectURL(audioBlob));
+      setIsVoiceProcessing(true);
+      setSubmitFeedback("Transcribing voice command...");
+      setError(null);
+      try {
+        const response = await enqueueVoicePrompt(audioBlob, {
+          workspace_id: selectedWorkspaceId || undefined
+        });
+        setVoiceTranscript(response.transcript);
+        setPrompt(response.transcript);
+        setSubmitFeedback(`Queued voice task ${response.job.id.slice(0, 8)}...`);
+        setJobs((prev) => ({
+          ...prev,
+          [response.job.id]: {
+            job: response.job,
+            output: null,
+            queue_rank: null
+          }
+        }));
+        await refreshJobs();
+      } catch (err: unknown) {
+        setBackendHealth("offline");
+        setError(String(err));
+        setSubmitFeedback("Voice command failed.");
+      } finally {
+        setIsVoiceProcessing(false);
+      }
+    },
+    [recordedAudioUrl, refreshJobs, selectedWorkspaceId]
+  );
+
   const handleRunWorkspaceCommand = async () => {
-    if (!selectedWorkspaceId || !workspaceCommand.trim()) {
+    if (!workspaceCommand.trim()) {
       return;
     }
     setWorkspaceCommandRunning(true);
     setError(null);
     try {
-      const result = await runWorkspaceCommand(selectedWorkspaceId, {
+      const result = await runWorkspaceCommand(selectedWorkspaceId || undefined, {
+        workspace_id: selectedWorkspaceId || undefined,
         command: workspaceCommand,
         timeout_seconds: 120
       });
@@ -451,24 +442,38 @@ export default function App() {
     [jobList]
   );
 
-  const toggleVoiceInput = () => {
+  const toggleVoiceInput = async () => {
     setError(null);
-    const recognition = recognitionRef.current;
-    if (!recognition) {
-      setError("Voice input is not supported by this browser.");
+    if (!voiceSupported) {
+      setError("Voice recording is not supported by this browser.");
       return;
     }
-    if (isListening) {
-      recognition.stop();
-      setIsListening(false);
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
       return;
     }
     try {
-      recognition.start();
-      setIsListening(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const audioBlob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        stream.getTracks().forEach((track) => track.stop());
+        void handleVoiceBlob(audioBlob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setSubmitFeedback("Recording... tap mic again to send voice command.");
     } catch {
-      setError("Unable to start voice input.");
-      setIsListening(false);
+      setError("Unable to start microphone recording.");
+      setIsRecording(false);
     }
   };
 
@@ -509,6 +514,10 @@ export default function App() {
     () => (selectedJobId ? liveOutputByJob[selectedJobId] ?? [] : []),
     [liveOutputByJob, selectedJobId]
   );
+  useEffect(() => {
+    setModalCommandResult(null);
+    setModalCommand("ls -la");
+  }, [selectedJobId]);
   const autoDetectedUrl = useMemo(() => {
     const output = selectedJob?.output?.assistant_output ?? "";
     const live = selectedLiveOutput.join("\n");
@@ -518,6 +527,28 @@ export default function App() {
     () => new Map(workspaces.map((workspace) => [workspace.id, workspace.name])),
     [workspaces]
   );
+  const selectedWorkspaceLabel = selectedWorkspaceId ? "Selected workspace" : "Auto workspace (default)";
+
+  const handleRunTaskTerminalCommand = async () => {
+    const workspaceId = selectedJob?.job.workspace_id || selectedWorkspaceId || undefined;
+    if (!modalCommand.trim()) {
+      return;
+    }
+    setModalCommandRunning(true);
+    setError(null);
+    try {
+      const result = await runWorkspaceCommand(workspaceId, {
+        workspace_id: workspaceId,
+        command: modalCommand,
+        timeout_seconds: 120
+      });
+      setModalCommandResult(result);
+    } catch (err: unknown) {
+      setError(String(err));
+    } finally {
+      setModalCommandRunning(false);
+    }
+  };
 
   return (
     <main className="app-root min-h-screen px-4 py-4 sm:px-6">
@@ -557,16 +588,16 @@ export default function App() {
           </div>
         </header>
 
-        <section className="app-toolbar app-panel">
+        <section className="app-toolbar app-panel mx-auto w-full max-w-5xl">
           <form
             ref={formRef}
-            className="grid w-full gap-3 md:grid-cols-[1fr_160px]"
+            className="grid w-full gap-3"
             onSubmit={handleEnqueue}
           >
             <div className="app-input-stack">
               <textarea
-                className="app-input rounded-lg px-4 py-3 text-base"
-                placeholder="Describe your task in detail. Press Enter to submit. Shift+Enter for newline."
+                className="app-input rounded-lg px-5 py-4 text-lg"
+                placeholder="Describe what you want built. Voice-first: record command, then refine text here if needed."
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 onKeyDown={(event) => {
@@ -575,29 +606,33 @@ export default function App() {
                     formRef.current?.requestSubmit();
                   }
                 }}
-                rows={4}
+                rows={7}
                 required
               />
               {voiceSupported ? (
                 <button
-                  className={`app-mic-button ${isListening ? "app-mic-button--active" : ""}`}
+                  className={`app-mic-button ${isRecording ? "app-mic-button--active" : ""}`}
                   onClick={toggleVoiceInput}
-                  title={isListening ? "Stop voice input" : "Start voice input"}
+                  title={isRecording ? "Stop & send voice command" : "Record voice command"}
                   type="button"
+                  disabled={isVoiceProcessing}
                 >
-                  {isListening ? <StopIcon className="h-5 w-5" /> : <MicrophoneIcon className="h-5 w-5" />}
+                  {isRecording ? <StopIcon className="h-6 w-6" /> : <MicrophoneIcon className="h-6 w-6" />}
                 </button>
               ) : null}
             </div>
-            <button
-              className="app-button-primary rounded-lg px-3 py-2 text-sm font-semibold md:self-end"
-              type="submit"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Submitting..." : "Add Task"}
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                className="app-button-primary rounded-lg px-4 py-2 text-sm font-semibold"
+                type="submit"
+                disabled={isSubmitting || isVoiceProcessing}
+              >
+                {isSubmitting ? "Submitting..." : "Add Task"}
+              </button>
+              <span className="text-xs text-[var(--app-subtle)]">{selectedWorkspaceLabel}</span>
+            </div>
             <select
-              className="app-input rounded-lg px-3 py-2 text-sm md:col-span-3"
+              className="app-input mx-auto w-full max-w-3xl rounded-lg px-3 py-2 text-sm"
               value={selectedWorkspaceId}
               onChange={(event) => {
                 void handleSelectWorkspace(event.target.value);
@@ -611,6 +646,17 @@ export default function App() {
               ))}
             </select>
           </form>
+          {recordedAudioUrl ? (
+            <div className="space-y-1">
+              <p className="text-xs text-[var(--app-subtle)]">Last voice capture</p>
+              <audio controls src={recordedAudioUrl} className="w-full" />
+            </div>
+          ) : null}
+          {voiceTranscript ? (
+            <p className="text-xs text-[var(--app-subtle)]">
+              Voice transcript: <span className="text-[var(--app-text)]">{voiceTranscript}</span>
+            </p>
+          ) : null}
           {submitFeedback ? (
             <p className="text-sm text-[var(--app-subtle)]">{submitFeedback}</p>
           ) : null}
@@ -693,12 +739,12 @@ export default function App() {
                       void handleRunWorkspaceCommand();
                     }
                   }}
-                  disabled={!selectedWorkspaceId || workspaceCommandRunning}
+                  disabled={workspaceCommandRunning}
                 />
                 <button
                   type="button"
                   className="app-button-primary rounded px-2 py-1 text-xs font-semibold"
-                  disabled={!selectedWorkspaceId || workspaceCommandRunning}
+                  disabled={workspaceCommandRunning}
                   onClick={() => {
                     void handleRunWorkspaceCommand();
                   }}
@@ -706,9 +752,9 @@ export default function App() {
                   {workspaceCommandRunning ? "Running..." : "Run"}
                 </button>
               </div>
-              {!selectedWorkspaceId ? (
-                <p className="text-xs text-[var(--app-muted-text)]">Select a workspace to run commands.</p>
-              ) : null}
+              <p className="text-xs text-[var(--app-muted-text)]">
+                Runs in {selectedWorkspaceId ? "selected workspace" : "auto workspace"}.
+              </p>
               {workspaceCommandResult ? (
                 <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                   <p className="text-[11px] text-[var(--app-subtle)]">
@@ -798,6 +844,38 @@ export default function App() {
                     No preview URL detected yet. Paste one from output/logs to run browser-in-browser.
                   </p>
                 )}
+                <div className="mt-3 rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
+                  <p className="mb-1 text-xs font-semibold">Task terminal</p>
+                  <div className="flex gap-2">
+                    <input
+                      className="app-input flex-1 rounded px-2 py-1 text-xs"
+                      value={modalCommand}
+                      onChange={(event) => setModalCommand(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleRunTaskTerminalCommand();
+                        }
+                      }}
+                      placeholder="npm run dev"
+                    />
+                    <button
+                      className="app-button-primary rounded px-2 py-1 text-xs font-semibold"
+                      type="button"
+                      onClick={() => {
+                        void handleRunTaskTerminalCommand();
+                      }}
+                      disabled={modalCommandRunning}
+                    >
+                      {modalCommandRunning ? "Running..." : "Run"}
+                    </button>
+                  </div>
+                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px]">
+                    {modalCommandResult
+                      ? `${modalCommandResult.stdout}${modalCommandResult.stderr ? `\n${modalCommandResult.stderr}` : ""}`
+                      : "No command run yet."}
+                  </pre>
+                </div>
               </section>
             </div>
           </div>
