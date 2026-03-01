@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 interface VoicePromptPlayerProps {
   src: string;
@@ -19,13 +19,6 @@ export function VoicePromptPlayer({ src }: VoicePromptPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-
-  const progress = useMemo(() => {
-    if (!duration) {
-      return 0;
-    }
-    return (currentTime / duration) * 100;
-  }, [currentTime, duration]);
 
   const togglePlay = async () => {
     const audio = audioRef.current;
@@ -59,9 +52,6 @@ export function VoicePromptPlayer({ src }: VoicePromptPlayerProps) {
       <button className="voice-player__toggle" type="button" onClick={() => void togglePlay()}>
         {isPlaying ? "Pause" : "Play"}
       </button>
-      <div className="voice-player__timeline">
-        <div className="voice-player__progress" style={{ width: `${progress}%` }} />
-      </div>
       <input
         className="voice-player__scrubber"
         type="range"

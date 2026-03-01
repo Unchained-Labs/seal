@@ -86,6 +86,94 @@ function detectFirstUrl(input: string): string | null {
   return match?.[0] ?? null;
 }
 
+function stringifyUnknownJson(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function pickTextField(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry;
+        }
+        if (entry && typeof entry === "object" && "text" in entry) {
+          return stringifyUnknownJson((entry as { text?: unknown }).text);
+        }
+        return stringifyUnknownJson(entry);
+      })
+      .join("")
+      .trim();
+    return joined || null;
+  }
+  if (value && typeof value === "object" && "text" in value) {
+    const text = stringifyUnknownJson((value as { text?: unknown }).text).trim();
+    return text || null;
+  }
+  return null;
+}
+
+function formatStreamingLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return trimmed;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const role = typeof parsed.role === "string" ? parsed.role : undefined;
+    const content =
+      pickTextField(parsed.content) ??
+      (parsed.message && typeof parsed.message === "object"
+        ? pickTextField((parsed.message as { content?: unknown }).content)
+        : null) ??
+      (parsed.delta && typeof parsed.delta === "object"
+        ? pickTextField((parsed.delta as { content?: unknown }).content)
+        : null);
+    if (role && content) {
+      return `${role}: ${content}`;
+    }
+    if (content) {
+      return content;
+    }
+    if (typeof parsed.type === "string") {
+      return `event:${parsed.type}`;
+    }
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+function formatLiveOutputLine(stream: string | undefined, line: string): string {
+  const normalized = formatStreamingLine(line);
+  if (!normalized) {
+    return "";
+  }
+  if (stream === "stderr") {
+    return `stderr> ${normalized}`;
+  }
+  return normalized;
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -266,11 +354,15 @@ export default function App() {
   const handleEvent = useCallback((event: OtterEventPayload) => {
     if (event.event_type === "output_chunk") {
       const payload = event.payload as { stream?: string; line?: string } | undefined;
-      const line = payload?.line?.trim();
+      const line = payload?.line;
       if (line) {
+        const formatted = formatLiveOutputLine(payload?.stream, line);
+        if (!formatted) {
+          return;
+        }
         setLiveOutputByJob((prev) => ({
           ...prev,
-          [event.job_id]: [...(prev[event.job_id] ?? []), `[${payload?.stream ?? "stdout"}] ${line}`]
+          [event.job_id]: [...(prev[event.job_id] ?? []), formatted]
         }));
       }
     } else {
@@ -744,7 +836,7 @@ export default function App() {
                   <p className="text-[11px] text-[var(--app-subtle)]">
                     Exit: {workspaceCommandResult.exit_code ?? "N/A"} {workspaceCommandResult.timed_out ? " (timed out)" : ""}
                   </p>
-                  <pre className="max-h-44 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
+                  <pre className="app-terminal-output max-h-44 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
                     {workspaceCommandResult.stdout || workspaceCommandResult.stderr || "(no output)"}
                   </pre>
                 </div>
@@ -839,30 +931,19 @@ export default function App() {
             {voiceAudioByJob[selectedJob.job.id] ? (
               <div className="app-audio-panel">
                 <p className="text-xs font-semibold text-[var(--app-subtle)]">Voice Command Audio</p>
-                <div className="grid gap-2">
-                  <button
-                    className="app-theme-toggle rounded px-2 py-1 text-xs"
-                    type="button"
-                    onClick={() => {
-                      void handleToggleVoicePlayback(selectedJob.job.id);
-                    }}
-                  >
-                    {playingVoiceJobId === selectedJob.job.id ? "Pause Voice" : "Play Voice"}
-                  </button>
-                  <VoicePromptPlayer src={voiceAudioByJob[selectedJob.job.id]} />
-                </div>
+                <VoicePromptPlayer src={voiceAudioByJob[selectedJob.job.id]} />
               </div>
             ) : null}
             <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-2">
               <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                 <p className="mb-1 text-xs font-semibold">Live terminal output</p>
-                <pre className="h-full max-h-[30rem] overflow-auto whitespace-pre-wrap text-[11px]">
+                <pre className="app-terminal-output h-full max-h-[30rem] overflow-auto whitespace-pre-wrap text-[11px]">
                   {selectedLiveOutput.length ? selectedLiveOutput.join("\n") : "No live chunks yet."}
                 </pre>
               </section>
               <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                 <p className="mb-1 text-xs font-semibold">Result</p>
-                <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[11px]">
+                <pre className="app-terminal-output max-h-32 overflow-auto whitespace-pre-wrap text-[11px]">
                   {selectedJob.output?.assistant_output ?? "No final output yet."}
                 </pre>
                 <div className="mt-2 flex gap-2">
@@ -910,7 +991,7 @@ export default function App() {
                       {modalCommandRunning ? "Running..." : "Run"}
                     </button>
                   </div>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px]">
+                  <pre className="app-terminal-output mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px]">
                     {modalCommandResult
                       ? `${modalCommandResult.stdout}${modalCommandResult.stderr ? `\n${modalCommandResult.stderr}` : ""}`
                       : "No command run yet."}

@@ -498,7 +498,7 @@ kbd {
 
 .voice-player {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   gap: 0.45rem 0.65rem;
   align-items: center;
   border: 1px solid color-mix(in oklab, var(--app-accent-alt) 44%, var(--app-muted-border));
@@ -526,25 +526,6 @@ kbd {
   cursor: pointer;
 }
 
-.voice-player__timeline {
-  position: relative;
-  height: 0.42rem;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--app-bg) 55%, var(--app-surface) 45%);
-  border: 1px solid color-mix(in oklab, var(--app-accent-alt) 28%, var(--app-muted-border));
-  overflow: hidden;
-}
-
-.voice-player__progress {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, var(--app-accent) 75%, white 25%),
-    color-mix(in oklab, var(--app-accent-alt) 65%, var(--app-accent))
-  );
-}
-
 .voice-player__scrubber {
   grid-column: 1 / -1;
   width: 100%;
@@ -554,9 +535,21 @@ kbd {
 
 .voice-player__time {
   margin: 0;
+  grid-column: 2;
+  justify-self: end;
   font-size: 0.72rem;
   color: var(--app-subtle);
   font-variant-numeric: tabular-nums;
+}
+
+.app-terminal-output {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  line-height: 1.45;
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--app-bg) 42%, var(--app-result-bg) 58%);
+  border: 1px solid color-mix(in oklab, var(--app-muted-border) 65%, transparent);
+  padding: 0.55rem;
 }
 
 .app-transcript {

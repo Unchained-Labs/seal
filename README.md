@@ -46,9 +46,9 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - running/completion duration labels
   - latest streamed output preview line
 - Modal-level runtime feedback:
-  - full live output panel
+  - full live output panel with normalized stream formatting
   - result panel
-  - custom voice player component for recorded prompts
+  - custom voice player component for recorded prompts (single control set)
 
 ## Data Sources
 
