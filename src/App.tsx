@@ -771,6 +771,13 @@ export default function App() {
             onReorderTodo={(target) => {
               void handleTodoDropOnTarget(target);
             }}
+              liveOutputPreviewForJob={(jobId) => {
+                const lines = liveOutputByJob[jobId];
+                if (!lines?.length) {
+                  return "";
+                }
+                return lines[lines.length - 1] ?? "";
+              }}
           />
           {Object.entries(voiceAudioByJob).map(([jobId, src]) => (
             <audio

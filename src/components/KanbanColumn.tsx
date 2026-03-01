@@ -14,6 +14,7 @@ interface KanbanColumnProps {
   onDragStart?: (jobId: string) => void;
   onDropOnCard?: (targetJobId: string) => void;
   icon?: ReactNode;
+  liveOutputPreviewForJob?: (jobId: string) => string;
 }
 
 export function KanbanColumn({
@@ -27,7 +28,8 @@ export function KanbanColumn({
   enableDragSort = false,
   onDragStart,
   onDropOnCard,
-  icon
+  icon,
+  liveOutputPreviewForJob
 }: KanbanColumnProps) {
   return (
     <section className="app-column flex min-h-0 flex-col gap-3 p-3">
@@ -58,6 +60,7 @@ export function KanbanColumn({
               draggable={enableDragSort}
               onDragStart={onDragStart}
               onDropOnCard={onDropOnCard}
+              liveOutputPreview={liveOutputPreviewForJob?.(item.job.id)}
             />
           ))
         )}
