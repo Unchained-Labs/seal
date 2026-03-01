@@ -17,7 +17,7 @@ import {
   updateQueuePriority
 } from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
-import { MicrophoneIcon, PulseIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
+import { MicrophoneIcon, PulseIcon, StopIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
 import type {
   HistoryItem,
