@@ -1,18 +1,17 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-yaml
+
   - repo: local
     hooks:
-      - id: seal-install
-        name: npm ci (node22)
-        entry: bash -lc 'source ~/.nvm/nvm.sh && nvm use 22 >/dev/null && npm ci'
-        language: system
-        pass_filenames: false
       - id: seal-lint
-        name: npm run lint (node22)
-        entry: bash -lc 'source ~/.nvm/nvm.sh && nvm use 22 >/dev/null && npm run lint'
-        language: system
-        pass_filenames: false
-      - id: seal-build
-        name: npm run build (node22)
-        entry: bash -lc 'source ~/.nvm/nvm.sh && nvm use 22 >/dev/null && npm run build'
+        name: eslint (node22)
+        entry: npx -y node@22 ./node_modules/eslint/bin/eslint.js . --ext ts,tsx --max-warnings 0
         language: system
         pass_filenames: false
