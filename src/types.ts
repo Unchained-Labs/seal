@@ -4,6 +4,8 @@ export interface Job {
   id: string;
   workspace_id: string;
   prompt: string;
+  preview_url: string | null;
+  is_paused: boolean;
   status: JobStatus;
   priority: number;
   schedule_at: string | null;
@@ -32,6 +34,7 @@ export interface QueueItem {
   job_id: string;
   workspace_id: string;
   prompt: string;
+  is_paused: boolean;
   priority: number;
   schedule_at: string | null;
   queue_rank: number;
@@ -112,4 +115,37 @@ export interface EnqueuePromptRequest {
 export interface VoiceEnqueueResponse {
   transcript: string;
   job: Job;
+}
+
+export type RuntimeContainerStatus = "running" | "stopped" | "missing";
+
+export interface RuntimePortBinding {
+  container_port: number;
+  host_ip: string;
+  host_port: number;
+}
+
+export interface RuntimeContainerInfo {
+  workspace_id: string;
+  container_name: string;
+  image_tag: string;
+  container_id: string | null;
+  status: RuntimeContainerStatus;
+  ports: RuntimePortBinding[];
+  preferred_url: string | null;
+}
+
+export interface RuntimeLogsResponse {
+  workspace_id: string;
+  logs: string;
+}
+
+export interface RuntimeShellMessage {
+  event: "result" | "error";
+  command?: string;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+  working_directory?: string;
+  error?: string;
 }

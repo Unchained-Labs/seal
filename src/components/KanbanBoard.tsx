@@ -6,6 +6,7 @@ import { KanbanColumn } from "./KanbanColumn";
 interface KanbanBoardProps {
   jobs: JobResponse[];
   onCancel: (jobId: string) => void;
+  onTogglePaused: (jobId: string, paused: boolean) => void;
   onOpen: (jobId: string) => void;
   hasVoiceForJob?: (jobId: string) => boolean;
   isVoicePlayingForJob?: (jobId: string) => boolean;
@@ -18,6 +19,7 @@ interface KanbanBoardProps {
 export function KanbanBoard({
   jobs,
   onCancel,
+  onTogglePaused,
   onOpen,
   hasVoiceForJob,
   isVoicePlayingForJob,
@@ -46,7 +48,11 @@ export function KanbanBoard({
       if (statusFilter === "running" && item.job.status !== "running") {
         return false;
       }
-      if (statusFilter === "failed" && item.job.status !== "failed") {
+      if (
+        statusFilter === "failed" &&
+        item.job.status !== "failed" &&
+        item.job.status !== "cancelled"
+      ) {
         return false;
       }
       if (statusFilter === "done" && !matchesDone(item)) {
@@ -117,8 +123,8 @@ export function KanbanBoard({
           <option value="all">All statuses</option>
           <option value="queued">Queued</option>
           <option value="running">Running</option>
-          <option value="done">Done/Cancelled</option>
-          <option value="failed">Failed</option>
+          <option value="done">Done</option>
+          <option value="failed">Failed / Cancelled</option>
         </select>
         <select
           className="app-input app-board-control"
@@ -158,6 +164,7 @@ export function KanbanBoard({
           title="Todo"
           items={todo}
           onCancel={onCancel}
+          onTogglePaused={onTogglePaused}
           onOpen={onOpen}
           hasVoiceForJob={hasVoiceForJob}
           isVoicePlayingForJob={isVoicePlayingForJob}
@@ -174,6 +181,7 @@ export function KanbanBoard({
           title="Running"
           items={running}
           onCancel={onCancel}
+          onTogglePaused={onTogglePaused}
           onOpen={onOpen}
           hasVoiceForJob={hasVoiceForJob}
           isVoicePlayingForJob={isVoicePlayingForJob}
@@ -185,6 +193,7 @@ export function KanbanBoard({
           title="Done"
           items={done}
           onCancel={onCancel}
+          onTogglePaused={onTogglePaused}
           onOpen={onOpen}
           hasVoiceForJob={hasVoiceForJob}
           isVoicePlayingForJob={isVoicePlayingForJob}
@@ -196,6 +205,7 @@ export function KanbanBoard({
           title="Blocked / Failed"
           items={blockedFailed}
           onCancel={onCancel}
+          onTogglePaused={onTogglePaused}
           onOpen={onOpen}
           hasVoiceForJob={hasVoiceForJob}
           isVoicePlayingForJob={isVoicePlayingForJob}

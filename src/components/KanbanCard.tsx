@@ -4,6 +4,7 @@ import { DoneIcon, FailedIcon, RunningIcon, TodoIcon } from "./icons";
 interface KanbanCardProps {
   item: JobResponse;
   onCancel?: (jobId: string) => void;
+  onTogglePaused?: (jobId: string, paused: boolean) => void;
   onOpen?: (jobId: string) => void;
   hasVoice?: boolean;
   isVoicePlaying?: boolean;
@@ -35,6 +36,7 @@ function formatCreatedAt(iso: string): string {
 export function KanbanCard({
   item,
   onCancel,
+  onTogglePaused,
   onOpen,
   hasVoice = false,
   isVoicePlaying = false,
@@ -49,16 +51,23 @@ export function KanbanCard({
   const createdMs = Date.parse(job.created_at);
   const updatedMs = Date.parse(job.updated_at);
   const nowMs = Date.now();
-  const elapsedForRunning = Number.isFinite(createdMs) ? formatDuration(nowMs - createdMs) : null;
+  const runningStartMs = Number.isFinite(updatedMs)
+    ? updatedMs
+    : Number.isFinite(createdMs)
+      ? createdMs
+      : NaN;
+  const elapsedForRunning = Number.isFinite(runningStartMs)
+    ? formatDuration(nowMs - runningStartMs)
+    : null;
   const elapsedToDone =
     Number.isFinite(createdMs) && Number.isFinite(updatedMs) ? formatDuration(updatedMs - createdMs) : null;
   const statusMeta =
     job.status === "queued"
       ? {
-          label: "In queue",
+          label: job.is_paused ? "Paused" : "In queue",
           bubbleClass: "app-status-bubble--queued",
           icon: <TodoIcon className="h-4 w-4" />,
-          durationLabel: null as string | null
+          durationLabel: job.is_paused ? "Paused in queue" : (null as string | null)
         }
       : job.status === "running"
         ? {
@@ -74,6 +83,13 @@ export function KanbanCard({
               icon: <FailedIcon className="h-4 w-4" />,
               durationLabel: elapsedToDone ? `Failed after ${elapsedToDone}` : null
             }
+          : job.status === "cancelled"
+            ? {
+                label: "Failed",
+                bubbleClass: "app-status-bubble--failed",
+                icon: <FailedIcon className="h-4 w-4" />,
+                durationLabel: elapsedToDone ? `Cancelled after ${elapsedToDone}` : "Cancelled"
+              }
           : {
               label: "Done",
               bubbleClass: "app-status-bubble--done",
@@ -123,6 +139,15 @@ export function KanbanCard({
         </p>
       ) : null}
       <div className="mt-2 flex items-center gap-2">
+        {job.status === "queued" ? (
+          <button
+            className="app-theme-toggle rounded px-2 py-1 text-xs font-medium"
+            onClick={() => onTogglePaused?.(job.id, job.is_paused)}
+            type="button"
+          >
+            {job.is_paused ? "Resume" : "Pause"}
+          </button>
+        ) : null}
         {job.status === "queued" || job.status === "running" ? (
           <button
             className="app-button-danger rounded px-2 py-1 text-xs font-medium"

@@ -4,6 +4,8 @@ import type {
   JobResponse,
   Project,
   QueueItem,
+  RuntimeContainerInfo,
+  RuntimeLogsResponse,
   VoiceEnqueueResponse,
   Workspace,
   WorkspaceCommandRequest,
@@ -21,7 +23,24 @@ function resolveOtterUrl(): string {
   return "/api";
 }
 
+function resolveOtterWsUrl(): string {
+  const configured = import.meta.env.VITE_OTTER_URL?.trim();
+  if (configured) {
+    try {
+      const parsed = new URL(configured);
+      parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+      parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+      return parsed.toString().replace(/\/+$/, "");
+    } catch {
+      // Fall through to same-origin default.
+    }
+  }
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/api`;
+}
+
 const OTTER_URL = resolveOtterUrl();
+const OTTER_WS_URL = resolveOtterWsUrl();
 const SEAL_DEBUG = import.meta.env.DEV || import.meta.env.VITE_SEAL_DEBUG === "1";
 
 function logApi(message: string, extra?: Record<string, unknown>) {
@@ -109,6 +128,36 @@ export async function runWorkspaceCommand(
   });
 }
 
+export async function getRuntimeStatus(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}`);
+}
+
+export async function startRuntimeContainer(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}/start`, {
+    method: "POST"
+  });
+}
+
+export async function stopRuntimeContainer(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}/stop`, {
+    method: "POST"
+  });
+}
+
+export async function restartRuntimeContainer(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}/restart`, {
+    method: "POST"
+  });
+}
+
+export async function getRuntimeLogs(workspaceId: string, tail = 300): Promise<RuntimeLogsResponse> {
+  return jsonRequest<RuntimeLogsResponse>(`/v1/runtime/workspaces/${workspaceId}/logs?tail=${tail}`);
+}
+
+export function openRuntimeShellSocket(workspaceId: string): WebSocket {
+  return new WebSocket(`${OTTER_WS_URL}/v1/runtime/workspaces/${workspaceId}/shell/ws`);
+}
+
 export async function enqueuePrompt(payload: EnqueuePromptRequest): Promise<JobResponse["job"]> {
   return jsonRequest<JobResponse["job"]>("/v1/prompts", {
     method: "POST",
@@ -179,6 +228,58 @@ export async function cancelJob(jobId: string): Promise<void> {
   logApi("request:success", {
     method: "POST",
     path: `/v1/jobs/${jobId}/cancel`,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
+export async function pauseJob(jobId: string): Promise<void> {
+  const startedAt = performance.now();
+  const path = `/v1/jobs/${jobId}/pause`;
+  logApi("request:start", { method: "POST", path });
+  const response = await fetch(`${OTTER_URL}${path}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", {
+    method: "POST",
+    path,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
+export async function resumeJob(jobId: string): Promise<void> {
+  const startedAt = performance.now();
+  const path = `/v1/jobs/${jobId}/resume`;
+  logApi("request:start", { method: "POST", path });
+  const response = await fetch(`${OTTER_URL}${path}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", {
+    method: "POST",
+    path,
     status: response.status,
     elapsedMs: Math.round(performance.now() - startedAt)
   });
