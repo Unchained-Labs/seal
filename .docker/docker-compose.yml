@@ -1,0 +1,11 @@
+services:
+  seal:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+      args:
+        VITE_OTTER_URL: ${VITE_OTTER_URL:-http://localhost:8080}
+    image: seal:local
+    ports:
+      - "${SEAL_PORT:-5173}:80"
+    restart: unless-stopped

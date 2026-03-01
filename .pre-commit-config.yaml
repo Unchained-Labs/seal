@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-yaml
+
+  - repo: local
+    hooks:
+      - id: seal-lint
+        name: eslint (node22)
+        entry: npx -y node@22 ./node_modules/eslint/bin/eslint.js . --ext ts,tsx --max-warnings 0
+        language: system
+        pass_filenames: false
