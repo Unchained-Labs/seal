@@ -35,7 +35,8 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
 2. Voice upload hits Otter `POST /v1/voice/prompts` and is transcribed via Lavoix.
 3. Transcript is shown and the job is enqueued.
 4. Todo ordering controls priority via drag/drop.
-5. Running jobs stream live chunks into the board.
+5. Queued jobs can be paused/resumed without leaving the queue.
+6. Running jobs stream live chunks into the board.
 6. Completed/failed jobs keep modal details with output, preview, terminal, and voice replay.
 
 ## Runtime Feedback
@@ -47,6 +48,7 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - latest streamed output preview line
   - human-readable creation timestamp
   - cancelled jobs grouped under `Blocked / Failed`
+  - paused queued jobs are visible as `Paused` and remain in Todo
 - Modal-level runtime feedback:
   - left result panel includes live build stream tail with normalized formatting
   - result panel
@@ -78,10 +80,15 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
 ## Kanban Filters And Sorting
 
 - Prompt text filter (search by task description).
-- Status filter (`All`, `Queued`, `Running`, `Done/Cancelled`, `Failed`).
+- Status filter (`All`, `Queued`, `Running`, `Done`, `Failed / Cancelled`).
 - Voice filter (`All`, `With voice`, `Without voice`).
 - Sort modes (`Workflow`, `Created`, `Updated` asc/desc variants).
 - One-click reset to restore default board view.
+
+## Demo URL Preview
+
+- Otter supports `POST /v1/jobs/{id}/preview-url` to attach a runnable demo URL to a job.
+- Seal browser preview now prefers explicit `job.preview_url` over URL auto-detection.
 
 ## Observability
 
