@@ -1,0 +1,18 @@
+repos:
+  - repo: local
+    hooks:
+      - id: seal-install
+        name: npm ci (node22)
+        entry: bash -lc 'source ~/.nvm/nvm.sh && nvm use 22 >/dev/null && npm ci'
+        language: system
+        pass_filenames: false
+      - id: seal-lint
+        name: npm run lint (node22)
+        entry: bash -lc 'source ~/.nvm/nvm.sh && nvm use 22 >/dev/null && npm run lint'
+        language: system
+        pass_filenames: false
+      - id: seal-build
+        name: npm run build (node22)
+        entry: bash -lc 'source ~/.nvm/nvm.sh && nvm use 22 >/dev/null && npm run build'
+        language: system
+        pass_filenames: false
