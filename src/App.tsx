@@ -302,6 +302,7 @@ export default function App() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const healthCheckInFlightRef = useRef(false);
+  const refreshSequenceRef = useRef(0);
   const pushToTalkActiveRef = useRef(false);
   const seenCompletedEventsRef = useRef<Set<string>>(new Set());
   const workspaceTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
@@ -315,6 +316,7 @@ export default function App() {
     typeof MediaRecorder !== "undefined";
 
   const refreshJobs = useCallback(async () => {
+    const refreshSequence = ++refreshSequenceRef.current;
     const [queueResult, historyResult] = await Promise.allSettled([listQueue(300, 0), listHistory(1000)]);
     const queue = queueResult.status === "fulfilled" ? queueResult.value : [];
     const history = historyResult.status === "fulfilled" ? historyResult.value : [];
@@ -344,6 +346,10 @@ export default function App() {
       })
     );
     const entries = mapped.filter((entry): entry is readonly [string, JobResponse] => entry !== null);
+    // Ignore stale refresh responses that completed out-of-order.
+    if (refreshSequence !== refreshSequenceRef.current) {
+      return;
+    }
     // Replace cache with backend truth so fresh DB runs don't keep stale local jobs.
     setJobs(Object.fromEntries(entries));
     setBackendHealth("online");
