@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cancelJob, enqueuePrompt, getJob, listQueue } from "./api/otter";
+import { cancelJob, checkBackendHealth, enqueuePrompt, getJob, listHistory, listQueue } from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
-import { MicrophoneIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
+import { MicrophoneIcon, PulseIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
-import type { JobResponse } from "./types";
+import type { HistoryItem, JobResponse, QueueItem } from "./types";
 
 interface SpeechRecognitionResultAlternative {
   transcript: string;
@@ -29,6 +29,7 @@ interface SpeechRecognitionLike extends EventTarget {
 }
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+type BackendHealth = "checking" | "online" | "offline";
 
 function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null): JobResponse {
   return {
@@ -50,6 +51,34 @@ function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null)
   };
 }
 
+function toHistoryJobResponse(item: HistoryItem): JobResponse {
+  return {
+    job: {
+      id: item.job_id,
+      workspace_id: item.workspace_id,
+      prompt: item.prompt,
+      status: item.status,
+      priority: 100,
+      schedule_at: null,
+      attempts: 0,
+      max_attempts: 0,
+      error: null,
+      created_at: item.created_at,
+      updated_at: item.created_at
+    },
+    output: item.assistant_output
+      ? {
+          id: `${item.job_id}-history-output`,
+          job_id: item.job_id,
+          assistant_output: item.assistant_output,
+          raw_json: null,
+          created_at: item.created_at
+        }
+      : null,
+    queue_rank: null
+  };
+}
+
 export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
   const [prompt, setPrompt] = useState("");
@@ -58,26 +87,71 @@ export default function App() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isListening, setIsListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
-  const refreshQueue = useCallback(async () => {
-    const queue = await listQueue(300, 0);
+  const refreshJobs = useCallback(async () => {
+    const [queue, history] = await Promise.all([listQueue(300, 0), listHistory(300)]);
+    const queueById = new Map<string, QueueItem>(queue.map((item) => [item.job_id, item]));
+    const historyById = new Map<string, HistoryItem>(history.map((item) => [item.job_id, item]));
+    const jobIds = Array.from(new Set([...queueById.keys(), ...historyById.keys()]));
+
     const mapped = await Promise.all(
-      queue.map(async (item) => {
+      jobIds.map(async (jobId) => {
         try {
-          const detail = await getJob(item.job_id);
-          return [item.job_id, { ...detail, queue_rank: item.queue_rank }] as const;
+          const detail = await getJob(jobId);
+          const queuedItem = queueById.get(jobId);
+          return [
+            jobId,
+            {
+              ...detail,
+              queue_rank: queuedItem?.queue_rank ?? detail.queue_rank
+            }
+          ] as const;
         } catch {
-          return [item.job_id, toQueuedJobResponse(item.job_id, item.prompt, item.queue_rank)] as const;
+          const queuedItem = queueById.get(jobId);
+          if (queuedItem) {
+            return [jobId, toQueuedJobResponse(jobId, queuedItem.prompt, queuedItem.queue_rank)] as const;
+          }
+          const historyItem = historyById.get(jobId);
+          if (historyItem) {
+            return [jobId, toHistoryJobResponse(historyItem)] as const;
+          }
+          return null;
         }
       })
     );
-    setJobs((prev) => ({ ...prev, ...Object.fromEntries(mapped) }));
+    const entries = mapped.filter((entry): entry is readonly [string, JobResponse] => entry !== null);
+    setJobs((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    setError(null);
   }, []);
 
   useEffect(() => {
-    void refreshQueue().catch((err: unknown) => setError(String(err)));
-  }, [refreshQueue]);
+    void refreshJobs().catch((err: unknown) => setError(String(err)));
+  }, [refreshJobs]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void refreshJobs().catch((err: unknown) => setError(String(err)));
+    }, 5000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [refreshJobs]);
+
+  useEffect(() => {
+    const refreshHealth = () => {
+      setBackendHealth((prev) => (prev === "online" ? "checking" : prev));
+      void checkBackendHealth().then((alive) => {
+        setBackendHealth(alive ? "online" : "offline");
+      });
+    };
+    refreshHealth();
+    const interval = window.setInterval(refreshHealth, 5000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     const preferredTheme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
@@ -165,7 +239,7 @@ export default function App() {
           queue_rank: null
         }
       }));
-      await refreshQueue();
+      await refreshJobs();
     } catch (err: unknown) {
       setError(String(err));
     }
@@ -215,6 +289,9 @@ export default function App() {
     }
   };
 
+  const backendHealthLabel =
+    backendHealth === "online" ? "Backend connection: live" : backendHealth === "offline" ? "Backend connection: offline" : "Checking backend connection";
+
   return (
     <main className="app-root min-h-screen px-4 py-4 sm:px-6">
       <div className="app-shell mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1600px] flex-col gap-4 p-4 sm:p-6">
@@ -227,23 +304,32 @@ export default function App() {
             </h1>
             <p className="text-sm text-[var(--app-subtle)]">Minimal control surface for Otter queue orchestration.</p>
           </div>
-          <button
-            className="app-theme-toggle rounded-lg px-3 py-2 text-xs font-semibold"
-            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-            type="button"
-          >
-            {theme === "dark" ? (
-              <>
-                <ThemeLightIcon className="h-4 w-4" />
-                Light
-              </>
-            ) : (
-              <>
-                <ThemeDarkIcon className="h-4 w-4" />
-                Dark
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <div
+              className={`app-health-indicator app-health-indicator--${backendHealth}`}
+              data-tooltip={backendHealthLabel}
+              aria-label={backendHealthLabel}
+            >
+              <PulseIcon className="h-4 w-4" />
+            </div>
+            <button
+              className="app-theme-toggle rounded-lg px-3 py-2 text-xs font-semibold"
+              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              type="button"
+            >
+              {theme === "dark" ? (
+                <>
+                  <ThemeLightIcon className="h-4 w-4" />
+                  Light
+                </>
+              ) : (
+                <>
+                  <ThemeDarkIcon className="h-4 w-4" />
+                  Dark
+                </>
+              )}
+            </button>
+          </div>
         </header>
 
         <section className="app-toolbar app-panel">

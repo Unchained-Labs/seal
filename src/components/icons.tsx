@@ -85,3 +85,12 @@ export function StopIcon(props: IconProps) {
     </BaseIcon>
   );
 }
+
+export function PulseIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M3 12h4l2.2-5 3.6 10 2.4-5H21" />
+      <circle cx="12" cy="12" r="9" />
+    </BaseIcon>
+  );
+}
