@@ -2,11 +2,213 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --app-bg: #090b11;
+    --app-surface: #111420;
+    --app-panel: #141a27;
+    --app-card: #171e2d;
+    --app-text: #dbe4f0;
+    --app-heading: #f8fafc;
+    --app-subtle: #94a3b8;
+    --app-accent: #8b9fff;
+    --app-border: #27314a;
+    --app-muted-border: #2d3854;
+    --app-muted-text: #64748b;
+    --app-result-bg: #101522;
+    color-scheme: dark;
+  }
+
+  [data-theme="light"] {
+    --app-bg: #f3f5f9;
+    --app-surface: #ffffff;
+    --app-panel: #f8fafc;
+    --app-card: #ffffff;
+    --app-text: #1e293b;
+    --app-heading: #0f172a;
+    --app-subtle: #64748b;
+    --app-accent: #4f46e5;
+    --app-border: #d6dbe8;
+    --app-muted-border: #dbe2ef;
+    --app-muted-text: #64748b;
+    --app-result-bg: #f1f5f9;
+    color-scheme: light;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
+  min-height: 100vh;
   margin: 0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: "Space Grotesk", Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    sans-serif;
+  background: var(--app-bg);
+  color: var(--app-text);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-root {
+  color: var(--app-text);
+}
+
+.app-shell {
+  border: 1px solid var(--app-border);
+  border-radius: 0.9rem;
+  background: var(--app-surface);
+}
+
+.app-panel,
+.app-column,
+.app-card {
+  border: 1px solid var(--app-muted-border);
+}
+
+.app-panel,
+.app-column {
+  background: var(--app-panel);
+  border-radius: 0.8rem;
+}
+
+.app-card {
+  background: var(--app-card);
+  border-radius: 0.75rem;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  border-bottom: 1px solid var(--app-muted-border);
+  padding-bottom: 1rem;
+}
+
+.app-label {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--app-subtle);
+}
+
+.app-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.app-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.app-stat {
+  border: 1px solid var(--app-muted-border);
+  border-radius: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--app-card);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.app-stat span {
+  font-size: 0.75rem;
+  color: var(--app-subtle);
+}
+
+.app-stat strong {
+  font-size: 0.95rem;
+  color: var(--app-heading);
+}
+
+.app-input {
+  border: 1px solid var(--app-muted-border);
+  background: var(--app-card);
+  color: var(--app-text);
+}
+
+.app-input-stack {
+  position: relative;
+}
+
+.app-input-stack .app-input {
+  padding-right: 2.4rem;
+  width: 100%;
+}
+
+.app-mic-button {
+  position: absolute;
+  top: 50%;
+  right: 0.45rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--app-muted-border);
+  border-radius: 0.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  background: var(--app-card);
+  color: var(--app-subtle);
+  cursor: pointer;
+}
+
+.app-mic-button--active {
+  color: #ef4444;
+}
+
+.app-input::placeholder {
+  color: var(--app-subtle);
+}
+
+.app-button-primary {
+  border: 1px solid var(--app-border);
+  background: color-mix(in oklab, var(--app-accent) 24%, var(--app-card));
+  color: var(--app-heading);
+}
+
+.app-button-primary:hover {
+  background: color-mix(in oklab, var(--app-accent) 36%, var(--app-card));
+}
+
+.app-button-danger {
+  border: 1px solid rgba(185, 28, 28, 0.7);
+  background: rgba(127, 29, 29, 0.25);
+  color: #fecaca;
+}
+
+.app-button-danger:hover {
+  background: rgba(127, 29, 29, 0.35);
+}
+
+.app-count-badge {
+  border: 1px solid var(--app-muted-border);
+  background: var(--app-card);
+  color: var(--app-text);
+}
+
+.app-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--app-muted-border);
+  background: color-mix(in oklab, var(--app-card) 88%, transparent);
+  color: var(--app-text);
+}
+
+@media (max-width: 900px) {
+  .app-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

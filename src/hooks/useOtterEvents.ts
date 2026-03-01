@@ -17,7 +17,7 @@ interface UseOtterEventsArgs {
 export function useOtterEvents({ onEvent }: UseOtterEventsArgs) {
   useEffect(() => {
     const source = new EventSource(`${OTTER_URL}/v1/events/stream`);
-    source.onmessage = (event) => {
+    const handleMessage = (event: MessageEvent<string>) => {
       try {
         const parsed = JSON.parse(event.data) as OtterEventPayload;
         onEvent(parsed);
@@ -25,9 +25,31 @@ export function useOtterEvents({ onEvent }: UseOtterEventsArgs) {
         // Ignore malformed payloads to keep stream alive
       }
     };
+    const eventTypes = [
+      "accepted",
+      "queued",
+      "started",
+      "retry_queued",
+      "completed",
+      "failed",
+      "cancelled",
+      "queue_priority_updated"
+    ];
+
+    // Fallback for default SSE "message" events.
+    source.onmessage = handleMessage;
+    // Otter sends named events; subscribe to each lifecycle event.
+    for (const eventType of eventTypes) {
+      source.addEventListener(eventType, handleMessage as EventListener);
+    }
     source.onerror = () => {
       // EventSource auto-reconnect handles transient failures.
     };
-    return () => source.close();
+    return () => {
+      for (const eventType of eventTypes) {
+        source.removeEventListener(eventType, handleMessage as EventListener);
+      }
+      source.close();
+    };
   }, [onEvent]);
 }

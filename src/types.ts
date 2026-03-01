@@ -48,7 +48,7 @@ export interface Workspace {
 }
 
 export interface EnqueuePromptRequest {
-  workspace_id: string;
+  workspace_id?: string;
   prompt: string;
   priority?: number;
 }
