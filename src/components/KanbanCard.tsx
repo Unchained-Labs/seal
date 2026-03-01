@@ -5,9 +5,19 @@ interface KanbanCardProps {
   item: JobResponse;
   onCancel?: (jobId: string) => void;
   onOpen?: (jobId: string) => void;
+  draggable?: boolean;
+  onDragStart?: (jobId: string) => void;
+  onDropOnCard?: (targetJobId: string) => void;
 }
 
-export function KanbanCard({ item, onCancel, onOpen }: KanbanCardProps) {
+export function KanbanCard({
+  item,
+  onCancel,
+  onOpen,
+  draggable = false,
+  onDragStart,
+  onDropOnCard
+}: KanbanCardProps) {
   const { job, output, queue_rank } = item;
   const statusIcon =
     job.status === "queued" ? (
@@ -21,7 +31,23 @@ export function KanbanCard({ item, onCancel, onOpen }: KanbanCardProps) {
     );
 
   return (
-    <article className="app-card p-3">
+    <article
+      className="app-card p-3"
+      draggable={draggable}
+      onDragStart={() => onDragStart?.(job.id)}
+      onDragOver={(event) => {
+        if (draggable) {
+          event.preventDefault();
+        }
+      }}
+      onDrop={(event) => {
+        if (!draggable) {
+          return;
+        }
+        event.preventDefault();
+        onDropOnCard?.(job.id);
+      }}
+    >
       <header className="mb-2 flex items-start justify-between gap-2">
         <p className="line-clamp-3 text-sm font-medium text-[var(--app-heading)]">{job.prompt}</p>
         {queue_rank ? (
@@ -34,7 +60,6 @@ export function KanbanCard({ item, onCancel, onOpen }: KanbanCardProps) {
         {statusIcon}
         Status: <span className="text-[var(--app-text)]">{job.status}</span>
       </p>
-      <p className="text-xs text-[var(--app-subtle)]">Priority: <span className="text-[var(--app-text)]">{job.priority}</span></p>
       {output?.assistant_output ? (
         <details className="mt-2 text-xs text-[var(--app-text)]">
           <summary className="cursor-pointer text-[var(--app-accent)]">Result</summary>

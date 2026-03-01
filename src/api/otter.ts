@@ -10,13 +10,27 @@ import type {
 } from "../types";
 
 const OTTER_URL = import.meta.env.VITE_OTTER_URL ?? "http://localhost:8080";
+const SEAL_DEBUG = import.meta.env.DEV || import.meta.env.VITE_SEAL_DEBUG === "1";
+
+function logApi(message: string, extra?: Record<string, unknown>) {
+  if (!SEAL_DEBUG) {
+    return;
+  }
+  console.info(`[seal-api] ${message}`, extra ?? {});
+}
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = init?.method ?? "GET";
+  const startedAt = performance.now();
+  logApi("request:start", { method, path });
   const response = await fetch(`${OTTER_URL}${path}`, init);
+  const elapsedMs = Math.round(performance.now() - startedAt);
   if (!response.ok) {
     const body = await response.text();
+    logApi("request:error", { method, path, status: response.status, elapsedMs, body });
     throw new Error(`Otter API ${response.status}: ${body}`);
   }
+  logApi("request:success", { method, path, status: response.status, elapsedMs });
   return (await response.json()) as T;
 }
 
@@ -83,11 +97,55 @@ export async function getJob(jobId: string): Promise<JobResponse> {
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
+  const startedAt = performance.now();
+  logApi("request:start", { method: "POST", path: `/v1/jobs/${jobId}/cancel` });
   const response = await fetch(`${OTTER_URL}/v1/jobs/${jobId}/cancel`, {
     method: "POST"
   });
   if (!response.ok) {
     const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path: `/v1/jobs/${jobId}/cancel`,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
     throw new Error(`Otter API ${response.status}: ${body}`);
   }
+  logApi("request:success", {
+    method: "POST",
+    path: `/v1/jobs/${jobId}/cancel`,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
+export async function updateQueuePriority(jobId: string, priority: number): Promise<void> {
+  const path = `/v1/queue/${jobId}`;
+  const startedAt = performance.now();
+  logApi("request:start", { method: "PATCH", path, priority });
+  const response = await fetch(`${OTTER_URL}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ priority })
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "PATCH",
+      path,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", {
+    method: "PATCH",
+    path,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt),
+    priority
+  });
 }

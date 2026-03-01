@@ -7,10 +7,22 @@ interface KanbanColumnProps {
   items: JobResponse[];
   onCancel?: (jobId: string) => void;
   onOpen?: (jobId: string) => void;
+  enableDragSort?: boolean;
+  onDragStart?: (jobId: string) => void;
+  onDropOnCard?: (targetJobId: string) => void;
   icon?: ReactNode;
 }
 
-export function KanbanColumn({ title, items, onCancel, onOpen, icon }: KanbanColumnProps) {
+export function KanbanColumn({
+  title,
+  items,
+  onCancel,
+  onOpen,
+  enableDragSort = false,
+  onDragStart,
+  onDropOnCard,
+  icon
+}: KanbanColumnProps) {
   return (
     <section className="app-column flex min-h-[22rem] flex-col gap-3 p-3">
       <header className="flex items-center justify-between">
@@ -29,7 +41,15 @@ export function KanbanColumn({ title, items, onCancel, onOpen, icon }: KanbanCol
           </div>
         ) : (
           items.map((item) => (
-            <KanbanCard key={item.job.id} item={item} onCancel={onCancel} onOpen={onOpen} />
+            <KanbanCard
+              key={item.job.id}
+              item={item}
+              onCancel={onCancel}
+              onOpen={onOpen}
+              draggable={enableDragSort}
+              onDragStart={onDragStart}
+              onDropOnCard={onDropOnCard}
+            />
           ))
         )}
       </div>

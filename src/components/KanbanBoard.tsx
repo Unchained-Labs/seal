@@ -6,9 +6,11 @@ interface KanbanBoardProps {
   jobs: JobResponse[];
   onCancel: (jobId: string) => void;
   onOpen: (jobId: string) => void;
+  onReorderTodo: (targetJobId: string) => void;
+  onTodoDragStart: (jobId: string) => void;
 }
 
-export function KanbanBoard({ jobs, onCancel, onOpen }: KanbanBoardProps) {
+export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragStart }: KanbanBoardProps) {
   const todo = jobs
     .filter((item) => item.job.status === "queued")
     .sort((a, b) => (a.queue_rank ?? Number.MAX_SAFE_INTEGER) - (b.queue_rank ?? Number.MAX_SAFE_INTEGER));
@@ -23,6 +25,11 @@ export function KanbanBoard({ jobs, onCancel, onOpen }: KanbanBoardProps) {
         items={todo}
         onCancel={onCancel}
         onOpen={onOpen}
+        enableDragSort
+        onDragStart={onTodoDragStart}
+        onDropOnCard={(targetJobId) => {
+          onReorderTodo(targetJobId);
+        }}
         icon={<TodoIcon className="h-4 w-4" />}
       />
       <KanbanColumn

@@ -9,7 +9,8 @@ import {
   listHistory,
   listProjects,
   listQueue,
-  listWorkspaces
+  listWorkspaces,
+  updateQueuePriority
 } from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { MicrophoneIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
@@ -108,8 +109,9 @@ export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
-  const [priority, setPriority] = useState(100);
   const [error, setError] = useState<string | null>(null);
+  const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isListening, setIsListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
@@ -122,11 +124,13 @@ export default function App() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [modalFullscreen, setModalFullscreen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [draggedTodoJobId, setDraggedTodoJobId] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const healthCheckInFlightRef = useRef(false);
 
   const refreshJobs = useCallback(async () => {
-    const [queueResult, historyResult] = await Promise.allSettled([listQueue(300, 0), listHistory(300)]);
+    const [queueResult, historyResult] = await Promise.allSettled([listQueue(300, 0), listHistory(1000)]);
     const queue = queueResult.status === "fulfilled" ? queueResult.value : [];
     const history = historyResult.status === "fulfilled" ? historyResult.value : [];
     if (queueResult.status === "rejected" && historyResult.status === "rejected") {
@@ -158,6 +162,7 @@ export default function App() {
     setJobs((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     setBackendHealth("online");
     setError(null);
+    setSubmitFeedback((prev) => (prev?.includes("Queued") ? prev : null));
   }, []);
 
   useEffect(() => {
@@ -307,6 +312,8 @@ export default function App() {
           [event.job_id]: [...(prev[event.job_id] ?? []), `[${payload?.stream ?? "stdout"}] ${line}`]
         }));
       }
+    } else {
+      console.info("[seal-events]", event.event_type, { jobId: event.job_id });
     }
     void getJob(event.job_id)
       .then((job) => {
@@ -322,13 +329,15 @@ export default function App() {
   const handleEnqueue = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    setSubmitFeedback("Submitting task...");
+    setIsSubmitting(true);
     try {
       const job = await enqueuePrompt({
         workspace_id: selectedWorkspaceId || undefined,
-        prompt,
-        priority
+        prompt
       });
       setPrompt("");
+      setSubmitFeedback(`Queued task ${job.id.slice(0, 8)}...`);
       setJobs((prev) => ({
         ...prev,
         [job.id]: {
@@ -341,6 +350,9 @@ export default function App() {
     } catch (err: unknown) {
       setBackendHealth("offline");
       setError(String(err));
+      setSubmitFeedback("Failed to submit task.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -385,6 +397,13 @@ export default function App() {
   };
 
   const jobList = useMemo(() => Object.values(jobs), [jobs]);
+  const todoList = useMemo(
+    () =>
+      jobList
+        .filter((item) => item.job.status === "queued")
+        .sort((a, b) => (a.queue_rank ?? Number.MAX_SAFE_INTEGER) - (b.queue_rank ?? Number.MAX_SAFE_INTEGER)),
+    [jobList]
+  );
   const stats = useMemo(
     () => ({
       total: jobList.length,
@@ -414,6 +433,35 @@ export default function App() {
     } catch {
       setError("Unable to start voice input.");
       setIsListening(false);
+    }
+  };
+
+  const handleTodoDropOnTarget = async (targetJobId: string) => {
+    if (!draggedTodoJobId || draggedTodoJobId === targetJobId) {
+      setDraggedTodoJobId(null);
+      return;
+    }
+    const orderedIds = todoList.map((item) => item.job.id);
+    const fromIndex = orderedIds.indexOf(draggedTodoJobId);
+    const toIndex = orderedIds.indexOf(targetJobId);
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedTodoJobId(null);
+      return;
+    }
+    const nextIds = [...orderedIds];
+    const [moved] = nextIds.splice(fromIndex, 1);
+    nextIds.splice(toIndex, 0, moved);
+
+    setSubmitFeedback("Updating todo order...");
+    try {
+      await Promise.all(nextIds.map((jobId, index) => updateQueuePriority(jobId, index + 1)));
+      await refreshJobs();
+      setSubmitFeedback("Todo order updated.");
+    } catch (err: unknown) {
+      setError(String(err));
+      setSubmitFeedback("Failed to update todo order.");
+    } finally {
+      setDraggedTodoJobId(null);
     }
   };
 
@@ -474,13 +522,24 @@ export default function App() {
         </header>
 
         <section className="app-toolbar app-panel">
-          <form className="grid w-full gap-3 md:grid-cols-[2fr_140px_150px]" onSubmit={handleEnqueue}>
+          <form
+            ref={formRef}
+            className="grid w-full gap-3 md:grid-cols-[1fr_160px]"
+            onSubmit={handleEnqueue}
+          >
             <div className="app-input-stack">
-              <input
-                className="app-input rounded-lg px-3 py-2 text-sm"
-                placeholder="Describe your task..."
+              <textarea
+                className="app-input rounded-lg px-4 py-3 text-base"
+                placeholder="Describe your task in detail. Press Enter to submit. Shift+Enter for newline."
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    formRef.current?.requestSubmit();
+                  }
+                }}
+                rows={4}
                 required
               />
               {voiceSupported ? (
@@ -494,19 +553,12 @@ export default function App() {
                 </button>
               ) : null}
             </div>
-            <input
-              className="app-input rounded-lg px-3 py-2 text-sm"
-              type="number"
-              min={1}
-              max={100000}
-              value={priority}
-              onChange={(e) => setPriority(Number(e.target.value))}
-            />
             <button
-              className="app-button-primary rounded-lg px-3 py-2 text-sm font-semibold"
+              className="app-button-primary rounded-lg px-3 py-2 text-sm font-semibold md:self-end"
               type="submit"
+              disabled={isSubmitting}
             >
-              Add Task
+              {isSubmitting ? "Submitting..." : "Add Task"}
             </button>
             <select
               className="app-input rounded-lg px-3 py-2 text-sm md:col-span-3"
@@ -523,6 +575,9 @@ export default function App() {
               ))}
             </select>
           </form>
+          {submitFeedback ? (
+            <p className="text-sm text-[var(--app-subtle)]">{submitFeedback}</p>
+          ) : null}
           <div className="app-stats-grid">
             <div className="app-stat"><span>Total</span><strong>{stats.total}</strong></div>
             <div className="app-stat"><span>Todo</span><strong>{stats.queued}</strong></div>
@@ -583,7 +638,15 @@ export default function App() {
           </aside>
 
           <div className="flex-1">
-            <KanbanBoard jobs={jobList} onCancel={handleCancel} onOpen={setSelectedJobId} />
+            <KanbanBoard
+              jobs={jobList}
+              onCancel={handleCancel}
+              onOpen={setSelectedJobId}
+              onTodoDragStart={setDraggedTodoJobId}
+              onReorderTodo={(target) => {
+                void handleTodoDropOnTarget(target);
+              }}
+            />
           </div>
         </div>
       </div>
