@@ -5,9 +5,15 @@ import {
   enqueuePrompt,
   enqueueVoicePrompt,
   getJob,
+  getRuntimeLogs,
+  getRuntimeStatus,
   listHistory,
   listQueue,
+  openRuntimeShellSocket,
+  restartRuntimeContainer,
   runWorkspaceCommand,
+  startRuntimeContainer,
+  stopRuntimeContainer,
   updateQueuePriority
 } from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
@@ -22,28 +28,22 @@ import {
   ThemeDarkIcon,
   ThemeLightIcon
 } from "./components/icons";
+import { RuntimeTerminal, type RuntimeTerminalEntry } from "./components/RuntimeTerminal";
 import { VoicePromptPlayer } from "./components/VoicePromptPlayer";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
 import type {
   HistoryItem,
   JobResponse,
   QueueItem,
+  RuntimeContainerInfo,
+  RuntimeShellMessage,
   WorkspaceCommandResponse
 } from "./types";
 type BackendHealth = "checking" | "online" | "offline";
 const JOB_CACHE_KEY = "seal-job-cache-v1";
 const VOICE_AUDIO_CACHE_KEY = "seal-voice-audio-v1";
 
-interface TerminalHistoryEntry {
-  id: string;
-  command: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-  timedOut: boolean;
-  createdAt: string;
-  workingDirectory: string;
-}
+type TerminalHistoryEntry = RuntimeTerminalEntry;
 
 interface UiToast {
   id: string;
@@ -288,6 +288,9 @@ export default function App() {
   const [draggedTodoJobId, setDraggedTodoJobId] = useState<string | null>(null);
   const [composerMode, setComposerMode] = useState<"voice" | "text">("voice");
   const [toasts, setToasts] = useState<UiToast[]>([]);
+  const [runtimeByWorkspace, setRuntimeByWorkspace] = useState<Record<string, RuntimeContainerInfo>>({});
+  const [runtimeLogsByWorkspace, setRuntimeLogsByWorkspace] = useState<Record<string, string>>({});
+  const [modalShellConnected, setModalShellConnected] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -298,6 +301,7 @@ export default function App() {
   const workspaceTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
   const modalTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
   const resultLiveStreamRef = useRef<HTMLPreElement | null>(null);
+  const modalShellSocketRef = useRef<WebSocket | null>(null);
   const voiceSupported =
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices &&
@@ -740,6 +744,9 @@ export default function App() {
     () => (selectedJobId ? modalTerminalHistoryByJob[selectedJobId] ?? [] : []),
     [modalTerminalHistoryByJob, selectedJobId]
   );
+  const selectedWorkspaceId = selectedJob?.job.workspace_id || "";
+  const selectedRuntime = selectedWorkspaceId ? runtimeByWorkspace[selectedWorkspaceId] : undefined;
+  const selectedRuntimeLogs = selectedWorkspaceId ? runtimeLogsByWorkspace[selectedWorkspaceId] ?? "" : "";
   useEffect(() => {
     setModalCommandResult(null);
     setModalCommand("ls -la");
@@ -747,6 +754,80 @@ export default function App() {
     setModalPreviewTab("terminal");
     setModalPreviewFullscreen(false);
   }, [selectedJobId]);
+  useEffect(() => {
+    if (!selectedWorkspaceId) {
+      return;
+    }
+    void getRuntimeStatus(selectedWorkspaceId)
+      .then((runtime) => {
+        setRuntimeByWorkspace((prev) => ({ ...prev, [selectedWorkspaceId]: runtime }));
+      })
+      .catch(() => {
+        // Ignore when runtime is disabled or unavailable.
+      });
+    void getRuntimeLogs(selectedWorkspaceId, 200)
+      .then((payload) => {
+        setRuntimeLogsByWorkspace((prev) => ({ ...prev, [selectedWorkspaceId]: payload.logs ?? "" }));
+      })
+      .catch(() => {
+        // Keep UI usable even when runtime logs are unavailable.
+      });
+  }, [selectedWorkspaceId]);
+  useEffect(() => {
+    const existing = modalShellSocketRef.current;
+    if (existing) {
+      existing.close();
+      modalShellSocketRef.current = null;
+    }
+    setModalShellConnected(false);
+    if (!selectedWorkspaceId || !selectedJobId) {
+      return;
+    }
+    const socket = openRuntimeShellSocket(selectedWorkspaceId);
+    modalShellSocketRef.current = socket;
+    socket.onopen = () => setModalShellConnected(true);
+    socket.onclose = () => setModalShellConnected(false);
+    socket.onerror = () => setModalShellConnected(false);
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data as string) as RuntimeShellMessage;
+        if (payload.event !== "result" || !payload.command) {
+          if (payload.error) {
+            setError(payload.error);
+          }
+          return;
+        }
+        const entry: TerminalHistoryEntry = {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command: payload.command,
+          stdout: payload.stdout ?? "",
+          stderr: payload.stderr ?? "",
+          exitCode: payload.exit_code ?? null,
+          timedOut: false,
+          createdAt: new Date().toISOString(),
+          workingDirectory: payload.working_directory ?? "workspace root"
+        };
+        setModalShellCwdByJob((prev) => ({
+          ...prev,
+          [selectedJobId]: entry.workingDirectory
+        }));
+        setModalTerminalHistoryByJob((prev) => ({
+          ...prev,
+          [selectedJobId]: [...(prev[selectedJobId] ?? []), entry].slice(-120)
+        }));
+      } catch {
+        // Ignore malformed shell payloads.
+      } finally {
+        setModalCommandRunning(false);
+      }
+    };
+    return () => {
+      socket.close();
+      if (modalShellSocketRef.current === socket) {
+        modalShellSocketRef.current = null;
+      }
+    };
+  }, [selectedWorkspaceId, selectedJobId]);
   useEffect(() => {
     const target = workspaceTerminalHistoryRef.current;
     if (target) {
@@ -768,8 +849,8 @@ export default function App() {
   const autoDetectedUrl = useMemo(() => {
     const output = selectedJob?.output?.assistant_output ?? "";
     const live = selectedLiveOutput.join("\n");
-    return detectFirstUrl(`${output}\n${live}`) ?? "";
-  }, [selectedJob, selectedLiveOutput]);
+    return detectFirstUrl(`${output}\n${live}`) ?? selectedRuntime?.preferred_url ?? "";
+  }, [selectedJob, selectedLiveOutput, selectedRuntime?.preferred_url]);
   const activePreviewUrl = normalizePreviewUrl(previewUrl.trim() || autoDetectedUrl);
   const handleRunTaskTerminalCommand = async () => {
     if (!selectedJobId) {
@@ -781,6 +862,16 @@ export default function App() {
     }
     setModalCommandRunning(true);
     setError(null);
+    const socket = modalShellSocketRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN && workspaceId) {
+      socket.send(
+        JSON.stringify({
+          command: modalCommand,
+          shell_session_id: selectedJobId
+        })
+      );
+      return;
+    }
     try {
       const result = await runWorkspaceCommand(workspaceId, {
         workspace_id: workspaceId,
@@ -811,6 +902,25 @@ export default function App() {
       setError(String(err));
     } finally {
       setModalCommandRunning(false);
+    }
+  };
+
+  const handleRuntimeAction = async (action: "start" | "stop" | "restart") => {
+    if (!selectedWorkspaceId) {
+      return;
+    }
+    try {
+      const runtime =
+        action === "start"
+          ? await startRuntimeContainer(selectedWorkspaceId)
+          : action === "stop"
+            ? await stopRuntimeContainer(selectedWorkspaceId)
+            : await restartRuntimeContainer(selectedWorkspaceId);
+      setRuntimeByWorkspace((prev) => ({ ...prev, [selectedWorkspaceId]: runtime }));
+      const logs = await getRuntimeLogs(selectedWorkspaceId, 200);
+      setRuntimeLogsByWorkspace((prev) => ({ ...prev, [selectedWorkspaceId]: logs.logs ?? "" }));
+    } catch (err: unknown) {
+      setError(String(err));
     }
   };
 
@@ -1014,28 +1124,13 @@ export default function App() {
               <p className="text-[11px] text-[var(--app-subtle)]">
                 cwd: <code>{workspaceShellCwd}</code>
               </p>
-              <div ref={workspaceTerminalHistoryRef} className="app-terminal-shell max-h-56 overflow-auto">
-                {workspaceTerminalHistory.length ? (
-                  workspaceTerminalHistory.map((entry) => (
-                    <div key={entry.id} className="app-terminal-entry">
-                      <p className="app-terminal-entry__command">
-                        <span className="app-terminal-entry__time">[{formatHistoryClock(entry.createdAt)}]</span>{" "}
-                        <span className="app-terminal-entry__cwd">({entry.workingDirectory})</span>{" "}
-                        <span className="app-terminal-entry__prompt">$</span> {entry.command}
-                      </p>
-                      {entry.stdout ? <pre className="app-terminal-entry__output">{entry.stdout}</pre> : null}
-                      {entry.stderr ? <pre className="app-terminal-entry__error">{entry.stderr}</pre> : null}
-                      <p className="app-terminal-entry__status">
-                        exit {entry.exitCode ?? "N/A"}
-                        {entry.timedOut ? " (timed out)" : ""}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-[var(--app-muted-text)]">
-                    No command history yet. Run a command to build history.
-                  </p>
-                )}
+              <div className="max-h-56">
+                <RuntimeTerminal
+                  history={workspaceTerminalHistory}
+                  historyRef={workspaceTerminalHistoryRef}
+                  formatClock={formatHistoryClock}
+                  emptyLabel="No command history yet. Run a command to build history."
+                />
               </div>
             </div>
           </aside>
@@ -1129,6 +1224,52 @@ export default function App() {
             <p className="text-xs text-[var(--app-subtle)]">
               Status: {selectedJob.job.status} • Workspace: {selectedJob.job.workspace_id || "auto"}
             </p>
+            {selectedWorkspaceId ? (
+              <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--app-subtle)]">
+                  <span>
+                    Runtime: <strong>{selectedRuntime?.status ?? "unknown"}</strong>
+                  </span>
+                  {selectedRuntime?.preferred_url ? (
+                    <span>
+                      URL: <code>{selectedRuntime.preferred_url}</code>
+                    </span>
+                  ) : null}
+                  <span>
+                    Shell: <strong>{modalShellConnected ? "connected" : "offline"}</strong>
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="app-theme-toggle rounded px-2 py-1 text-xs"
+                    onClick={() => {
+                      void handleRuntimeAction("start");
+                    }}
+                  >
+                    Start
+                  </button>
+                  <button
+                    type="button"
+                    className="app-theme-toggle rounded px-2 py-1 text-xs"
+                    onClick={() => {
+                      void handleRuntimeAction("restart");
+                    }}
+                  >
+                    Restart
+                  </button>
+                  <button
+                    type="button"
+                    className="app-theme-toggle rounded px-2 py-1 text-xs"
+                    onClick={() => {
+                      void handleRuntimeAction("stop");
+                    }}
+                  >
+                    Stop
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {voiceAudioByJob[selectedJob.job.id] ? (
               <div className="app-audio-panel">
                 <p className="text-xs font-semibold text-[var(--app-subtle)]">Voice Command Audio</p>
@@ -1225,37 +1366,22 @@ export default function App() {
                         </p>
                       ) : null}
                     </div>
+                    {selectedRuntimeLogs ? (
+                      <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
+                        <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Runtime container logs</p>
+                        <pre className="app-terminal-output max-h-28 overflow-auto whitespace-pre-wrap text-[11px]">
+                          {selectedRuntimeLogs}
+                        </pre>
+                      </div>
+                    ) : null}
                     <div className="min-h-0 flex-1 rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
                       <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Workspace shell history</p>
-                      <div ref={modalTerminalHistoryRef} className="app-terminal-shell h-full overflow-auto">
-                        {selectedTerminalHistory.length ? (
-                          selectedTerminalHistory.map((entry) => (
-                            <div key={entry.id} className="app-terminal-entry">
-                              <p className="app-terminal-entry__command">
-                                <span className="app-terminal-entry__time">
-                                  [{formatHistoryClock(entry.createdAt)}]
-                                </span>{" "}
-                                <span className="app-terminal-entry__cwd">({entry.workingDirectory})</span>{" "}
-                                <span className="app-terminal-entry__prompt">$</span> {entry.command}
-                              </p>
-                              {entry.stdout ? (
-                                <pre className="app-terminal-entry__output">{entry.stdout}</pre>
-                              ) : null}
-                              {entry.stderr ? (
-                                <pre className="app-terminal-entry__error">{entry.stderr}</pre>
-                              ) : null}
-                              <p className="app-terminal-entry__status">
-                                exit {entry.exitCode ?? "N/A"}
-                                {entry.timedOut ? " (timed out)" : ""}
-                              </p>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-xs text-[var(--app-muted-text)]">
-                            No command history yet. Run a command to build history.
-                          </p>
-                        )}
-                      </div>
+                      <RuntimeTerminal
+                        history={selectedTerminalHistory}
+                        historyRef={modalTerminalHistoryRef}
+                        formatClock={formatHistoryClock}
+                        emptyLabel="No command history yet. Run a command to build history."
+                      />
                     </div>
                   </div>
                 ) : (

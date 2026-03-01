@@ -53,6 +53,9 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - custom voice player component for recorded prompts (single control set)
   - icon-based tabbed preview panel (`Workspace Shell` / `Browser`) with fullscreen toggle
   - workspace shell sessions keep current working directory across commands
+  - runtime container status and start/stop/restart controls
+  - websocket shell execution against Otter runtime (`/v1/runtime/workspaces/{id}/shell/ws`) with HTTP command fallback
+  - runtime container logs preview in terminal panel
   - completion toast notifications when jobs finish
 
 ## Data Sources

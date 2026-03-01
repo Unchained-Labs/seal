@@ -4,6 +4,8 @@ import type {
   JobResponse,
   Project,
   QueueItem,
+  RuntimeContainerInfo,
+  RuntimeLogsResponse,
   VoiceEnqueueResponse,
   Workspace,
   WorkspaceCommandRequest,
@@ -21,7 +23,24 @@ function resolveOtterUrl(): string {
   return "/api";
 }
 
+function resolveOtterWsUrl(): string {
+  const configured = import.meta.env.VITE_OTTER_URL?.trim();
+  if (configured) {
+    try {
+      const parsed = new URL(configured);
+      parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+      parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+      return parsed.toString().replace(/\/+$/, "");
+    } catch {
+      // Fall through to same-origin default.
+    }
+  }
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/api`;
+}
+
 const OTTER_URL = resolveOtterUrl();
+const OTTER_WS_URL = resolveOtterWsUrl();
 const SEAL_DEBUG = import.meta.env.DEV || import.meta.env.VITE_SEAL_DEBUG === "1";
 
 function logApi(message: string, extra?: Record<string, unknown>) {
@@ -107,6 +126,36 @@ export async function runWorkspaceCommand(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
+}
+
+export async function getRuntimeStatus(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}`);
+}
+
+export async function startRuntimeContainer(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}/start`, {
+    method: "POST"
+  });
+}
+
+export async function stopRuntimeContainer(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}/stop`, {
+    method: "POST"
+  });
+}
+
+export async function restartRuntimeContainer(workspaceId: string): Promise<RuntimeContainerInfo> {
+  return jsonRequest<RuntimeContainerInfo>(`/v1/runtime/workspaces/${workspaceId}/restart`, {
+    method: "POST"
+  });
+}
+
+export async function getRuntimeLogs(workspaceId: string, tail = 300): Promise<RuntimeLogsResponse> {
+  return jsonRequest<RuntimeLogsResponse>(`/v1/runtime/workspaces/${workspaceId}/logs?tail=${tail}`);
+}
+
+export function openRuntimeShellSocket(workspaceId: string): WebSocket {
+  return new WebSocket(`${OTTER_WS_URL}/v1/runtime/workspaces/${workspaceId}/shell/ws`);
 }
 
 export async function enqueuePrompt(payload: EnqueuePromptRequest): Promise<JobResponse["job"]> {
