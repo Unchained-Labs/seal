@@ -8,20 +8,20 @@
     --palette-mint: #4bffca;
     --palette-purple: #8024e7;
     --palette-lavender: #b187ff;
-    --app-bg: #00052b;
-    --app-surface: #0b1144;
-    --app-panel: #121a58;
-    --app-card: #18206a;
-    --app-text: #e8f4ff;
-    --app-heading: #f4f7ff;
-    --app-subtle: #b9c9ff;
-    --app-accent: #38c9a3;
-    --app-accent-alt: #947ac7;
-    --app-purple: #6d3cb2;
-    --app-border: #3a4aa2;
-    --app-muted-border: #2d3d8e;
-    --app-muted-text: #9bb0ff;
-    --app-result-bg: #0a0f3d;
+    --app-bg: #02041e;
+    --app-surface: #070b2f;
+    --app-panel: #0c123a;
+    --app-card: #101845;
+    --app-text: #d8e2ff;
+    --app-heading: #edf2ff;
+    --app-subtle: #8f9cc9;
+    --app-accent: #2db696;
+    --app-accent-alt: #7f62b4;
+    --app-purple: #50308a;
+    --app-border: #26316a;
+    --app-muted-border: #1e2859;
+    --app-muted-text: #7f8cb8;
+    --app-result-bg: #070c2d;
     color-scheme: dark;
   }
 
@@ -55,8 +55,8 @@ body {
   font-family: "Avenir Next", "Nunito", "Space Grotesk", Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     sans-serif;
   background:
-    radial-gradient(circle at 8% 6%, color-mix(in oklab, var(--palette-lavender) 10%, transparent) 0%, transparent 40%),
-    radial-gradient(circle at 90% 8%, color-mix(in oklab, var(--palette-mint) 8%, transparent) 0%, transparent 42%),
+    radial-gradient(circle at 8% 6%, color-mix(in oklab, var(--palette-lavender) 6%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 90% 8%, color-mix(in oklab, var(--palette-mint) 4%, transparent) 0%, transparent 42%),
     var(--app-bg);
   color: var(--app-text);
 }
@@ -212,10 +212,10 @@ body {
   border: 1px solid var(--app-border);
   background: linear-gradient(
     135deg,
-    color-mix(in oklab, var(--palette-mint) 52%, white 48%),
-    color-mix(in oklab, var(--palette-purple) 22%, var(--palette-lavender) 78%)
+    color-mix(in oklab, var(--palette-mint) 34%, #112236 66%),
+    color-mix(in oklab, var(--palette-purple) 30%, #1b1735 70%)
   );
-  color: #00052b;
+  color: #e8f0ff;
 }
 
 .app-button-primary:hover {
