@@ -84,6 +84,22 @@ export interface WorkspaceFileResponse {
   truncated: boolean;
 }
 
+export interface WorkspaceCommandRequest {
+  command: string;
+  working_directory?: string;
+  timeout_seconds?: number;
+}
+
+export interface WorkspaceCommandResponse {
+  workspace_id: string;
+  command: string;
+  working_directory: string;
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+  timed_out: boolean;
+}
+
 export interface EnqueuePromptRequest {
   workspace_id?: string;
   prompt: string;

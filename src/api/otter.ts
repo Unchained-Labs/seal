@@ -5,6 +5,8 @@ import type {
   Project,
   QueueItem,
   Workspace,
+  WorkspaceCommandRequest,
+  WorkspaceCommandResponse,
   WorkspaceFileResponse,
   WorkspaceTreeResponse
 } from "../types";
@@ -93,6 +95,17 @@ export async function getWorkspaceFile(
 ): Promise<WorkspaceFileResponse> {
   const query = new URLSearchParams({ path: relativePath });
   return jsonRequest<WorkspaceFileResponse>(`/v1/workspaces/${workspaceId}/file?${query.toString()}`);
+}
+
+export async function runWorkspaceCommand(
+  workspaceId: string,
+  payload: WorkspaceCommandRequest
+): Promise<WorkspaceCommandResponse> {
+  return jsonRequest<WorkspaceCommandResponse>(`/v1/workspaces/${workspaceId}/command`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function enqueuePrompt(payload: EnqueuePromptRequest): Promise<JobResponse["job"]> {

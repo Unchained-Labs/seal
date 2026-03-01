@@ -11,6 +11,7 @@ import {
   listHistory,
   listProjects,
   listQueue,
+  runWorkspaceCommand,
   listWorkspaces,
   updateQueuePriority
 } from "./api/otter";
@@ -23,6 +24,7 @@ import type {
   Project,
   QueueItem,
   Workspace,
+  WorkspaceCommandResponse,
   WorkspaceFileResponse,
   WorkspaceTreeResponse
 } from "./types";
@@ -133,6 +135,9 @@ export default function App() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [workspaceTree, setWorkspaceTree] = useState<WorkspaceTreeResponse | null>(null);
   const [selectedFile, setSelectedFile] = useState<WorkspaceFileResponse | null>(null);
+  const [workspaceCommand, setWorkspaceCommand] = useState("ls -la");
+  const [workspaceCommandResult, setWorkspaceCommandResult] = useState<WorkspaceCommandResponse | null>(null);
+  const [workspaceCommandRunning, setWorkspaceCommandRunning] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [modalFullscreen, setModalFullscreen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -408,6 +413,25 @@ export default function App() {
     }
   };
 
+  const handleRunWorkspaceCommand = async () => {
+    if (!selectedWorkspaceId || !workspaceCommand.trim()) {
+      return;
+    }
+    setWorkspaceCommandRunning(true);
+    setError(null);
+    try {
+      const result = await runWorkspaceCommand(selectedWorkspaceId, {
+        command: workspaceCommand,
+        timeout_seconds: 120
+      });
+      setWorkspaceCommandResult(result);
+    } catch (err: unknown) {
+      setError(String(err));
+    } finally {
+      setWorkspaceCommandRunning(false);
+    }
+  };
+
   const jobList = useMemo(() => Object.values(jobs), [jobs]);
   const todoList = useMemo(
     () =>
@@ -655,9 +679,50 @@ export default function App() {
                 )}
               </div>
             ) : null}
+            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--app-subtle)]">Workspace shell</h2>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  className="app-input flex-1 rounded px-2 py-1 text-xs"
+                  value={workspaceCommand}
+                  placeholder="npm run dev"
+                  onChange={(event) => setWorkspaceCommand(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleRunWorkspaceCommand();
+                    }
+                  }}
+                  disabled={!selectedWorkspaceId || workspaceCommandRunning}
+                />
+                <button
+                  type="button"
+                  className="app-button-primary rounded px-2 py-1 text-xs font-semibold"
+                  disabled={!selectedWorkspaceId || workspaceCommandRunning}
+                  onClick={() => {
+                    void handleRunWorkspaceCommand();
+                  }}
+                >
+                  {workspaceCommandRunning ? "Running..." : "Run"}
+                </button>
+              </div>
+              {!selectedWorkspaceId ? (
+                <p className="text-xs text-[var(--app-muted-text)]">Select a workspace to run commands.</p>
+              ) : null}
+              {workspaceCommandResult ? (
+                <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
+                  <p className="text-[11px] text-[var(--app-subtle)]">
+                    Exit: {workspaceCommandResult.exit_code ?? "N/A"} {workspaceCommandResult.timed_out ? " (timed out)" : ""}
+                  </p>
+                  <pre className="max-h-44 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
+                    {workspaceCommandResult.stdout || workspaceCommandResult.stderr || "(no output)"}
+                  </pre>
+                </div>
+              ) : null}
+            </div>
           </aside>
 
-          <div className="flex-1">
+          <div className="flex-1 min-h-0 overflow-hidden">
             <KanbanBoard
               jobs={jobList}
               onCancel={handleCancel}
