@@ -11,6 +11,7 @@ interface KanbanBoardProps {
   onToggleVoice?: (jobId: string) => void;
   onReorderTodo: (targetJobId: string) => void;
   onTodoDragStart: (jobId: string) => void;
+  liveOutputPreviewForJob?: (jobId: string) => string;
 }
 
 export function KanbanBoard({
@@ -21,7 +22,8 @@ export function KanbanBoard({
   isVoicePlayingForJob,
   onToggleVoice,
   onReorderTodo,
-  onTodoDragStart
+  onTodoDragStart,
+  liveOutputPreviewForJob
 }: KanbanBoardProps) {
   const todo = jobs
     .filter((item) => item.job.status === "queued")
@@ -46,6 +48,7 @@ export function KanbanBoard({
           onReorderTodo(targetJobId);
         }}
         icon={<TodoIcon className="h-4 w-4" />}
+        liveOutputPreviewForJob={liveOutputPreviewForJob}
       />
       <KanbanColumn
         title="Running"
@@ -56,6 +59,7 @@ export function KanbanBoard({
         isVoicePlayingForJob={isVoicePlayingForJob}
         onToggleVoice={onToggleVoice}
         icon={<RunningIcon className="h-4 w-4" />}
+        liveOutputPreviewForJob={liveOutputPreviewForJob}
       />
       <KanbanColumn
         title="Done"
@@ -66,6 +70,7 @@ export function KanbanBoard({
         isVoicePlayingForJob={isVoicePlayingForJob}
         onToggleVoice={onToggleVoice}
         icon={<DoneIcon className="h-3 w-3" />}
+        liveOutputPreviewForJob={liveOutputPreviewForJob}
       />
       <KanbanColumn
         title="Blocked / Failed"
@@ -76,6 +81,7 @@ export function KanbanBoard({
         isVoicePlayingForJob={isVoicePlayingForJob}
         onToggleVoice={onToggleVoice}
         icon={<FailedIcon className="h-4 w-4" />}
+        liveOutputPreviewForJob={liveOutputPreviewForJob}
       />
     </div>
   );

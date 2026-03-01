@@ -11,6 +11,17 @@ interface KanbanCardProps {
   draggable?: boolean;
   onDragStart?: (jobId: string) => void;
   onDropOnCard?: (targetJobId: string) => void;
+  liveOutputPreview?: string;
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins > 0) {
+    return `${mins}m ${secs}s`;
+  }
+  return `${secs}s`;
 }
 
 export function KanbanCard({
@@ -22,21 +33,44 @@ export function KanbanCard({
   onToggleVoice,
   draggable = false,
   onDragStart,
-  onDropOnCard
+  onDropOnCard,
+  liveOutputPreview
 }: KanbanCardProps) {
   const { job, queue_rank } = item;
+  const createdMs = Date.parse(job.created_at);
+  const updatedMs = Date.parse(job.updated_at);
+  const nowMs = Date.now();
+  const elapsedForRunning = Number.isFinite(createdMs) ? formatDuration(nowMs - createdMs) : null;
+  const elapsedToDone =
+    Number.isFinite(createdMs) && Number.isFinite(updatedMs) ? formatDuration(updatedMs - createdMs) : null;
   const statusMeta =
     job.status === "queued"
-      ? { label: "In queue", bubbleClass: "app-status-bubble--queued", icon: <TodoIcon className="h-4 w-4" /> }
+      ? {
+          label: "In queue",
+          bubbleClass: "app-status-bubble--queued",
+          icon: <TodoIcon className="h-4 w-4" />,
+          durationLabel: null as string | null
+        }
       : job.status === "running"
         ? {
             label: "Running",
             bubbleClass: "app-status-bubble--running",
-            icon: <RunningIcon className="h-4 w-4" />
+            icon: <RunningIcon className="h-4 w-4" />,
+            durationLabel: elapsedForRunning ? `Running for ${elapsedForRunning}` : null
           }
         : job.status === "failed"
-          ? { label: "Failed", bubbleClass: "app-status-bubble--failed", icon: <FailedIcon className="h-4 w-4" /> }
-          : { label: "Done", bubbleClass: "app-status-bubble--done", icon: <DoneIcon className="h-4 w-4" /> };
+          ? {
+              label: "Failed",
+              bubbleClass: "app-status-bubble--failed",
+              icon: <FailedIcon className="h-4 w-4" />,
+              durationLabel: elapsedToDone ? `Failed after ${elapsedToDone}` : null
+            }
+          : {
+              label: "Done",
+              bubbleClass: "app-status-bubble--done",
+              icon: <DoneIcon className="h-4 w-4" />,
+              durationLabel: elapsedToDone ? `Finished in ${elapsedToDone}` : null
+            };
 
   return (
     <article
@@ -70,6 +104,14 @@ export function KanbanCard({
           {statusMeta.label}
         </span>
       </div>
+      {statusMeta.durationLabel ? (
+        <p className="mt-1 text-[11px] text-[var(--app-subtle)]">{statusMeta.durationLabel}</p>
+      ) : null}
+      {liveOutputPreview ? (
+        <p className="mt-1 rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] px-2 py-1 font-mono text-[11px] text-[var(--app-subtle)] line-clamp-2">
+          {liveOutputPreview}
+        </p>
+      ) : null}
       <div className="mt-2 flex items-center gap-2">
         {job.status === "queued" || job.status === "running" ? (
           <button
