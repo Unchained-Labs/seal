@@ -24,6 +24,16 @@ type BackendHealth = "checking" | "online" | "offline";
 const JOB_CACHE_KEY = "seal-job-cache-v1";
 const VOICE_AUDIO_CACHE_KEY = "seal-voice-audio-v1";
 
+interface TerminalHistoryEntry {
+  id: string;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  createdAt: string;
+}
+
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -174,6 +184,14 @@ function formatLiveOutputLine(stream: string | undefined, line: string): string 
   return normalized;
 }
 
+function formatHistoryClock(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) {
+    return "--:--:--";
+  }
+  return new Date(parsed).toLocaleTimeString();
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -205,6 +223,11 @@ export default function App() {
   const [modalCommand, setModalCommand] = useState("ls -la");
   const [modalCommandRunning, setModalCommandRunning] = useState(false);
   const [modalCommandResult, setModalCommandResult] = useState<WorkspaceCommandResponse | null>(null);
+  const [modalPreviewTab, setModalPreviewTab] = useState<"terminal" | "browser">("terminal");
+  const [modalPreviewFullscreen, setModalPreviewFullscreen] = useState(false);
+  const [modalTerminalHistoryByJob, setModalTerminalHistoryByJob] = useState<
+    Record<string, TerminalHistoryEntry[]>
+  >({});
   const [draggedTodoJobId, setDraggedTodoJobId] = useState<string | null>(null);
   const [showWriteInput, setShowWriteInput] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -624,16 +647,27 @@ export default function App() {
     () => (selectedJobId ? liveOutputByJob[selectedJobId] ?? [] : []),
     [liveOutputByJob, selectedJobId]
   );
+  const selectedTerminalHistory = useMemo(
+    () => (selectedJobId ? modalTerminalHistoryByJob[selectedJobId] ?? [] : []),
+    [modalTerminalHistoryByJob, selectedJobId]
+  );
   useEffect(() => {
     setModalCommandResult(null);
     setModalCommand("ls -la");
+    setPreviewUrl("");
+    setModalPreviewTab("terminal");
+    setModalPreviewFullscreen(false);
   }, [selectedJobId]);
   const autoDetectedUrl = useMemo(() => {
     const output = selectedJob?.output?.assistant_output ?? "";
     const live = selectedLiveOutput.join("\n");
     return detectFirstUrl(`${output}\n${live}`) ?? "";
   }, [selectedJob, selectedLiveOutput]);
+  const activePreviewUrl = previewUrl.trim() || autoDetectedUrl;
   const handleRunTaskTerminalCommand = async () => {
+    if (!selectedJobId) {
+      return;
+    }
     const workspaceId = selectedJob?.job.workspace_id || undefined;
     if (!modalCommand.trim()) {
       return;
@@ -647,6 +681,19 @@ export default function App() {
         timeout_seconds: 120
       });
       setModalCommandResult(result);
+      const entry: TerminalHistoryEntry = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command: modalCommand,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+        exitCode: result.exit_code ?? null,
+        timedOut: result.timed_out ?? false,
+        createdAt: new Date().toISOString()
+      };
+      setModalTerminalHistoryByJob((prev) => ({
+        ...prev,
+        [selectedJobId]: [...(prev[selectedJobId] ?? []), entry].slice(-120)
+      }));
     } catch (err: unknown) {
       setError(String(err));
     } finally {
@@ -934,69 +981,157 @@ export default function App() {
                 <VoicePromptPlayer src={voiceAudioByJob[selectedJob.job.id]} />
               </div>
             ) : null}
-            <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-2">
-              <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
-                <p className="mb-1 text-xs font-semibold">Live terminal output</p>
-                <pre className="app-terminal-output h-full max-h-[30rem] overflow-auto whitespace-pre-wrap text-[11px]">
-                  {selectedLiveOutput.length ? selectedLiveOutput.join("\n") : "No live chunks yet."}
-                </pre>
-              </section>
+            <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[4fr_6fr]">
               <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                 <p className="mb-1 text-xs font-semibold">Result</p>
                 <pre className="app-terminal-output max-h-32 overflow-auto whitespace-pre-wrap text-[11px]">
                   {selectedJob.output?.assistant_output ?? "No final output yet."}
                 </pre>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    className="app-input flex-1 rounded px-2 py-1 text-xs"
-                    placeholder="https://localhost:3000"
-                    value={previewUrl || autoDetectedUrl}
-                    onChange={(event) => setPreviewUrl(event.target.value)}
-                  />
-                </div>
-                {(previewUrl || autoDetectedUrl) ? (
-                  <iframe
-                    className="mt-2 h-64 w-full rounded border border-[var(--app-muted-border)] bg-white"
-                    src={previewUrl || autoDetectedUrl}
-                    title="Workspace app preview"
-                  />
-                ) : (
-                  <p className="mt-2 text-xs text-[var(--app-muted-text)]">
-                    No preview URL detected yet. Paste one from output/logs to run browser-in-browser.
-                  </p>
-                )}
-                <div className="mt-3 rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
-                  <p className="mb-1 text-xs font-semibold">Task terminal</p>
-                  <div className="flex gap-2">
-                    <input
-                      className="app-input flex-1 rounded px-2 py-1 text-xs"
-                      value={modalCommand}
-                      onChange={(event) => setModalCommand(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void handleRunTaskTerminalCommand();
-                        }
-                      }}
-                      placeholder="npm run dev"
-                    />
+                <p className="mt-2 text-xs text-[var(--app-muted-text)]">
+                  Use the tabbed panel to switch between Browser and Terminal views.
+                </p>
+              </section>
+              <section
+                className={`rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] ${
+                  modalPreviewFullscreen
+                    ? "fixed inset-5 z-[80] flex h-auto w-auto flex-col p-3 shadow-2xl"
+                    : "flex min-h-[32rem] flex-col p-2"
+                }`}
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
                     <button
-                      className="app-button-primary rounded px-2 py-1 text-xs font-semibold"
                       type="button"
-                      onClick={() => {
-                        void handleRunTaskTerminalCommand();
-                      }}
-                      disabled={modalCommandRunning}
+                      className={`app-tab-button ${modalPreviewTab === "terminal" ? "app-tab-button--active" : ""}`}
+                      onClick={() => setModalPreviewTab("terminal")}
                     >
-                      {modalCommandRunning ? "Running..." : "Run"}
+                      Terminal
+                    </button>
+                    <button
+                      type="button"
+                      className={`app-tab-button ${modalPreviewTab === "browser" ? "app-tab-button--active" : ""}`}
+                      onClick={() => setModalPreviewTab("browser")}
+                    >
+                      Browser
                     </button>
                   </div>
-                  <pre className="app-terminal-output mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px]">
-                    {modalCommandResult
-                      ? `${modalCommandResult.stdout}${modalCommandResult.stderr ? `\n${modalCommandResult.stderr}` : ""}`
-                      : "No command run yet."}
-                  </pre>
+                  <button
+                    type="button"
+                    className="app-theme-toggle rounded px-2 py-1 text-xs"
+                    onClick={() => setModalPreviewFullscreen((prev) => !prev)}
+                  >
+                    {modalPreviewFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                  </button>
                 </div>
+                {modalPreviewTab === "terminal" ? (
+                  <div className="flex min-h-0 flex-1 flex-col gap-2">
+                    <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
+                      <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Run command in workspace</p>
+                      <div className="flex gap-2">
+                        <input
+                          className="app-input flex-1 rounded px-2 py-1 text-xs"
+                          value={modalCommand}
+                          onChange={(event) => setModalCommand(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void handleRunTaskTerminalCommand();
+                            }
+                          }}
+                          placeholder="npm run dev"
+                        />
+                        <button
+                          className="app-button-primary rounded px-2 py-1 text-xs font-semibold"
+                          type="button"
+                          onClick={() => {
+                            void handleRunTaskTerminalCommand();
+                          }}
+                          disabled={modalCommandRunning}
+                        >
+                          {modalCommandRunning ? "Running..." : "Run"}
+                        </button>
+                      </div>
+                      {modalCommandResult ? (
+                        <p className="mt-1 text-[11px] text-[var(--app-subtle)]">
+                          Last command exit: {modalCommandResult.exit_code ?? "N/A"}
+                          {modalCommandResult.timed_out ? " (timed out)" : ""}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="grid min-h-0 flex-1 gap-2 xl:grid-cols-2">
+                      <div className="flex min-h-0 flex-col rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
+                        <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Live build stream</p>
+                        <pre className="app-terminal-output h-full overflow-auto whitespace-pre-wrap text-[11px]">
+                          {selectedLiveOutput.length ? selectedLiveOutput.join("\n") : "No live chunks yet."}
+                        </pre>
+                      </div>
+                      <div className="flex min-h-0 flex-col rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
+                        <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Workspace shell history</p>
+                        <div className="app-terminal-shell h-full overflow-auto">
+                          {selectedTerminalHistory.length ? (
+                            selectedTerminalHistory.map((entry) => (
+                              <div key={entry.id} className="app-terminal-entry">
+                                <p className="app-terminal-entry__command">
+                                  <span className="app-terminal-entry__time">
+                                    [{formatHistoryClock(entry.createdAt)}]
+                                  </span>{" "}
+                                  <span className="app-terminal-entry__prompt">$</span> {entry.command}
+                                </p>
+                                {entry.stdout ? (
+                                  <pre className="app-terminal-entry__output">{entry.stdout}</pre>
+                                ) : null}
+                                {entry.stderr ? (
+                                  <pre className="app-terminal-entry__error">{entry.stderr}</pre>
+                                ) : null}
+                                <p className="app-terminal-entry__status">
+                                  exit {entry.exitCode ?? "N/A"}
+                                  {entry.timedOut ? " (timed out)" : ""}
+                                </p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-[var(--app-muted-text)]">
+                              No command history yet. Run a command to build history.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col gap-2">
+                    <div className="flex gap-2">
+                      <input
+                        className="app-input flex-1 rounded px-2 py-1 text-xs"
+                        placeholder={autoDetectedUrl || "https://localhost:3000"}
+                        value={previewUrl}
+                        onChange={(event) => setPreviewUrl(event.target.value)}
+                      />
+                      {autoDetectedUrl ? (
+                        <button
+                          type="button"
+                          className="app-theme-toggle rounded px-2 py-1 text-xs"
+                          onClick={() => setPreviewUrl(autoDetectedUrl)}
+                        >
+                          Use detected URL
+                        </button>
+                      ) : null}
+                    </div>
+                    {activePreviewUrl ? (
+                      <iframe
+                        className="h-full min-h-[24rem] w-full flex-1 rounded border border-[var(--app-muted-border)] bg-white"
+                        src={activePreviewUrl}
+                        title="Workspace app preview"
+                      />
+                    ) : (
+                      <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-3">
+                        <p className="text-xs text-[var(--app-muted-text)]">
+                          No preview URL yet. Paste one above, or use a detected URL from output when available.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </section>
             </div>
           </div>
