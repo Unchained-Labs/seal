@@ -7,6 +7,9 @@ interface KanbanColumnProps {
   items: JobResponse[];
   onCancel?: (jobId: string) => void;
   onOpen?: (jobId: string) => void;
+  hasVoiceForJob?: (jobId: string) => boolean;
+  isVoicePlayingForJob?: (jobId: string) => boolean;
+  onToggleVoice?: (jobId: string) => void;
   enableDragSort?: boolean;
   onDragStart?: (jobId: string) => void;
   onDropOnCard?: (targetJobId: string) => void;
@@ -18,6 +21,9 @@ export function KanbanColumn({
   items,
   onCancel,
   onOpen,
+  hasVoiceForJob,
+  isVoicePlayingForJob,
+  onToggleVoice,
   enableDragSort = false,
   onDragStart,
   onDropOnCard,
@@ -46,6 +52,9 @@ export function KanbanColumn({
               item={item}
               onCancel={onCancel}
               onOpen={onOpen}
+              hasVoice={hasVoiceForJob?.(item.job.id) ?? false}
+              isVoicePlaying={isVoicePlayingForJob?.(item.job.id) ?? false}
+              onToggleVoice={onToggleVoice}
               draggable={enableDragSort}
               onDragStart={onDragStart}
               onDropOnCard={onDropOnCard}

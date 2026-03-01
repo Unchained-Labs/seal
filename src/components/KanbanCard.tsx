@@ -5,6 +5,9 @@ interface KanbanCardProps {
   item: JobResponse;
   onCancel?: (jobId: string) => void;
   onOpen?: (jobId: string) => void;
+  hasVoice?: boolean;
+  isVoicePlaying?: boolean;
+  onToggleVoice?: (jobId: string) => void;
   draggable?: boolean;
   onDragStart?: (jobId: string) => void;
   onDropOnCard?: (targetJobId: string) => void;
@@ -14,6 +17,9 @@ export function KanbanCard({
   item,
   onCancel,
   onOpen,
+  hasVoice = false,
+  isVoicePlaying = false,
+  onToggleVoice,
   draggable = false,
   onDragStart,
   onDropOnCard
@@ -27,7 +33,7 @@ export function KanbanCard({
     ) : job.status === "failed" ? (
       <FailedIcon className="h-3.5 w-3.5" />
     ) : (
-      <DoneIcon className="h-3.25 w-3.25" />
+      <DoneIcon className="h-3 w-3" />
     );
 
   return (
@@ -77,6 +83,15 @@ export function KanbanCard({
         >
           Open
         </button>
+        {hasVoice ? (
+          <button
+            className="app-theme-toggle rounded px-2 py-1 text-xs font-medium"
+            onClick={() => onToggleVoice?.(job.id)}
+            type="button"
+          >
+            {isVoicePlaying ? "Pause Voice" : "Play Voice"}
+          </button>
+        ) : null}
       </div>
     </article>
   );

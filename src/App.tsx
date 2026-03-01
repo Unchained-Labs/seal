@@ -17,7 +17,7 @@ import {
   updateQueuePriority
 } from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
-import { MicrophoneIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
+import { MicrophoneIcon, PulseIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
 import type {
   HistoryItem,
@@ -31,6 +31,16 @@ import type {
 } from "./types";
 type BackendHealth = "checking" | "online" | "offline";
 const JOB_CACHE_KEY = "seal-job-cache-v1";
+const VOICE_AUDIO_CACHE_KEY = "seal-voice-audio-v1";
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read blob."));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.readAsDataURL(blob);
+  });
+}
 
 function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null): JobResponse {
   return {
@@ -107,6 +117,8 @@ export default function App() {
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+  const [voiceAudioByJob, setVoiceAudioByJob] = useState<Record<string, string>>({});
+  const [playingVoiceJobId, setPlayingVoiceJobId] = useState<string | null>(null);
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
   const [projects, setProjects] = useState<Project[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -126,6 +138,7 @@ export default function App() {
   const formRef = useRef<HTMLFormElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const healthCheckInFlightRef = useRef(false);
   const voiceSupported =
     typeof navigator !== "undefined" &&
@@ -182,11 +195,30 @@ export default function App() {
 
   useEffect(() => {
     try {
+      const raw = window.localStorage.getItem(VOICE_AUDIO_CACHE_KEY);
+      if (raw) {
+        setVoiceAudioByJob(JSON.parse(raw) as Record<string, string>);
+      }
+    } catch {
+      // Ignore malformed cache.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
       window.localStorage.setItem(JOB_CACHE_KEY, JSON.stringify(jobs));
     } catch {
       // Ignore quota/storage issues.
     }
   }, [jobs]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VOICE_AUDIO_CACHE_KEY, JSON.stringify(voiceAudioByJob));
+    } catch {
+      // Ignore quota/storage issues.
+    }
+  }, [voiceAudioByJob]);
 
   useEffect(() => {
     void refreshJobs().catch((err: unknown) => {
@@ -260,14 +292,6 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
     window.localStorage.setItem("seal-theme", theme);
   }, [theme]);
-
-  useEffect(() => {
-    return () => {
-      if (recordedAudioUrl) {
-        URL.revokeObjectURL(recordedAudioUrl);
-      }
-    };
-  }, [recordedAudioUrl]);
 
   const handleEvent = useCallback((event: OtterEventPayload) => {
     if (event.event_type === "output_chunk") {
@@ -369,10 +393,8 @@ export default function App() {
         setError("Captured audio is empty.");
         return;
       }
-      if (recordedAudioUrl) {
-        URL.revokeObjectURL(recordedAudioUrl);
-      }
-      setRecordedAudioUrl(URL.createObjectURL(audioBlob));
+      const dataUrl = await blobToDataUrl(audioBlob);
+      setRecordedAudioUrl(dataUrl);
       setIsVoiceProcessing(true);
       setSubmitFeedback("Transcribing voice command...");
       setError(null);
@@ -382,6 +404,7 @@ export default function App() {
         });
         setVoiceTranscript(response.transcript);
         setPrompt(response.transcript);
+        setVoiceAudioByJob((prev) => ({ ...prev, [response.job.id]: dataUrl }));
         setSubmitFeedback(`Queued voice task ${response.job.id.slice(0, 8)}...`);
         setJobs((prev) => ({
           ...prev,
@@ -400,7 +423,7 @@ export default function App() {
         setIsVoiceProcessing(false);
       }
     },
-    [recordedAudioUrl, refreshJobs, selectedWorkspaceId]
+    [refreshJobs, selectedWorkspaceId]
   );
 
   const handleRunWorkspaceCommand = async () => {
@@ -550,17 +573,45 @@ export default function App() {
     }
   };
 
+  const setJobAudioRef = (jobId: string, element: HTMLAudioElement | null) => {
+    audioRefs.current[jobId] = element;
+  };
+
+  const handleToggleVoicePlayback = async (jobId: string) => {
+    const audio = audioRefs.current[jobId];
+    if (!audio) {
+      return;
+    }
+    if (playingVoiceJobId === jobId && !audio.paused) {
+      audio.pause();
+      setPlayingVoiceJobId(null);
+      return;
+    }
+    if (playingVoiceJobId && playingVoiceJobId !== jobId) {
+      const previous = audioRefs.current[playingVoiceJobId];
+      previous?.pause();
+    }
+    try {
+      await audio.play();
+      setPlayingVoiceJobId(jobId);
+    } catch {
+      setError("Unable to start audio playback.");
+    }
+  };
+
   return (
     <main className="app-root min-h-screen px-4 py-4 sm:px-6">
       <div className="app-shell mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col gap-4 p-4 sm:p-6">
         <header className="app-header">
           <div className="space-y-1">
             <p className="app-label">Seal</p>
-            <h1 className="flex items-center gap-3 text-3xl font-extrabold tracking-tight text-[var(--app-heading)] sm:text-4xl">
-              <TerminalIcon className="h-8 w-8 text-[var(--app-accent)]" />
-              Builder Board
+            <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-[var(--app-heading)] sm:text-3xl">
+              <PulseIcon className="h-6 w-6 text-[var(--app-accent)]" />
+              Voice Ops Board
             </h1>
-            <p className="text-sm text-[var(--app-subtle)]">Playful control surface for Otter queue orchestration.</p>
+            <p className="text-sm text-[var(--app-subtle)]">
+              Minimal control surface for voice-first Otter orchestration.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div
@@ -611,7 +662,7 @@ export default function App() {
               />
               {voiceSupported ? (
                 <button
-                  className={`app-mic-button ${isRecording ? "app-mic-button--active" : ""}`}
+                  className={`app-mic-button ${isRecording ? "app-mic-button--active app-mic-button--recording" : ""}`}
                   onClick={toggleVoiceInput}
                   title={isRecording ? "Stop & send voice command" : "Record voice command"}
                   type="button"
@@ -621,6 +672,15 @@ export default function App() {
                 </button>
               ) : null}
             </div>
+            {isRecording ? (
+              <div className="app-voice-wave" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : null}
             <div className="flex items-center justify-center gap-3">
               <button
                 className="app-button-primary rounded-lg px-4 py-2 text-sm font-semibold"
@@ -649,7 +709,7 @@ export default function App() {
           {recordedAudioUrl ? (
             <div className="space-y-1">
               <p className="text-xs text-[var(--app-subtle)]">Last voice capture</p>
-              <audio controls src={recordedAudioUrl} className="w-full" />
+              <audio controls src={recordedAudioUrl} className="app-audio-player" />
             </div>
           ) : null}
           {voiceTranscript ? (
@@ -773,11 +833,32 @@ export default function App() {
               jobs={jobList}
               onCancel={handleCancel}
               onOpen={setSelectedJobId}
+              hasVoiceForJob={(jobId) => Boolean(voiceAudioByJob[jobId])}
+              isVoicePlayingForJob={(jobId) => playingVoiceJobId === jobId}
+              onToggleVoice={(jobId) => {
+                void handleToggleVoicePlayback(jobId);
+              }}
               onTodoDragStart={setDraggedTodoJobId}
               onReorderTodo={(target) => {
                 void handleTodoDropOnTarget(target);
               }}
             />
+            {Object.entries(voiceAudioByJob).map(([jobId, src]) => (
+              <audio
+                key={jobId}
+                ref={(element) => setJobAudioRef(jobId, element)}
+                src={src}
+                onPlay={() => setPlayingVoiceJobId(jobId)}
+                onPause={() => {
+                  setPlayingVoiceJobId((current) => (current === jobId ? null : current));
+                }}
+                onEnded={() => {
+                  setPlayingVoiceJobId((current) => (current === jobId ? null : current));
+                }}
+                preload="metadata"
+                className="hidden"
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -813,6 +894,34 @@ export default function App() {
             <p className="text-xs text-[var(--app-subtle)]">
               Status: {selectedJob.job.status} • Workspace: {workspaceNameById.get(selectedJob.job.workspace_id) ?? selectedJob.job.workspace_id}
             </p>
+            {voiceAudioByJob[selectedJob.job.id] ? (
+              <div className="app-audio-panel">
+                <p className="text-xs font-semibold text-[var(--app-subtle)]">Voice Command Audio</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="app-theme-toggle rounded px-2 py-1 text-xs"
+                    type="button"
+                    onClick={() => {
+                      void handleToggleVoicePlayback(selectedJob.job.id);
+                    }}
+                  >
+                    {playingVoiceJobId === selectedJob.job.id ? "Pause Voice" : "Play Voice"}
+                  </button>
+                  <audio
+                    className="app-audio-player"
+                    controls
+                    src={voiceAudioByJob[selectedJob.job.id]}
+                    onPlay={() => setPlayingVoiceJobId(selectedJob.job.id)}
+                    onPause={() =>
+                      setPlayingVoiceJobId((current) => (current === selectedJob.job.id ? null : current))
+                    }
+                    onEnded={() =>
+                      setPlayingVoiceJobId((current) => (current === selectedJob.job.id ? null : current))
+                    }
+                  />
+                </div>
+              </div>
+            ) : null}
             <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-2">
               <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                 <p className="mb-1 text-xs font-semibold">Live terminal output</p>

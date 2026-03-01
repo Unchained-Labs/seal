@@ -52,7 +52,8 @@ export function RunningIcon(props: IconProps) {
 export function DoneIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
-      <path d="M20 7L10 17l-6-6" />
+      <circle cx="12" cy="12" r="8.2" />
+      <path d="M8.8 12.4l2.2 2.2 4.4-4.4" />
     </BaseIcon>
   );
 }

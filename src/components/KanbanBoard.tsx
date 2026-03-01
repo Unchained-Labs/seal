@@ -6,11 +6,23 @@ interface KanbanBoardProps {
   jobs: JobResponse[];
   onCancel: (jobId: string) => void;
   onOpen: (jobId: string) => void;
+  hasVoiceForJob?: (jobId: string) => boolean;
+  isVoicePlayingForJob?: (jobId: string) => boolean;
+  onToggleVoice?: (jobId: string) => void;
   onReorderTodo: (targetJobId: string) => void;
   onTodoDragStart: (jobId: string) => void;
 }
 
-export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragStart }: KanbanBoardProps) {
+export function KanbanBoard({
+  jobs,
+  onCancel,
+  onOpen,
+  hasVoiceForJob,
+  isVoicePlayingForJob,
+  onToggleVoice,
+  onReorderTodo,
+  onTodoDragStart
+}: KanbanBoardProps) {
   const todo = jobs
     .filter((item) => item.job.status === "queued")
     .sort((a, b) => (a.queue_rank ?? Number.MAX_SAFE_INTEGER) - (b.queue_rank ?? Number.MAX_SAFE_INTEGER));
@@ -25,6 +37,9 @@ export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragS
         items={todo}
         onCancel={onCancel}
         onOpen={onOpen}
+        hasVoiceForJob={hasVoiceForJob}
+        isVoicePlayingForJob={isVoicePlayingForJob}
+        onToggleVoice={onToggleVoice}
         enableDragSort
         onDragStart={onTodoDragStart}
         onDropOnCard={(targetJobId) => {
@@ -37,6 +52,9 @@ export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragS
         items={running}
         onCancel={onCancel}
         onOpen={onOpen}
+        hasVoiceForJob={hasVoiceForJob}
+        isVoicePlayingForJob={isVoicePlayingForJob}
+        onToggleVoice={onToggleVoice}
         icon={<RunningIcon className="h-4 w-4" />}
       />
       <KanbanColumn
@@ -44,13 +62,19 @@ export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragS
         items={done}
         onCancel={onCancel}
         onOpen={onOpen}
-        icon={<DoneIcon className="h-3.5 w-3.5" />}
+        hasVoiceForJob={hasVoiceForJob}
+        isVoicePlayingForJob={isVoicePlayingForJob}
+        onToggleVoice={onToggleVoice}
+        icon={<DoneIcon className="h-3 w-3" />}
       />
       <KanbanColumn
         title="Blocked / Failed"
         items={blockedFailed}
         onCancel={onCancel}
         onOpen={onOpen}
+        hasVoiceForJob={hasVoiceForJob}
+        isVoicePlayingForJob={isVoicePlayingForJob}
+        onToggleVoice={onToggleVoice}
         icon={<FailedIcon className="h-4 w-4" />}
       />
     </div>
