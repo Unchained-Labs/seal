@@ -4,9 +4,10 @@ import { DoneIcon, FailedIcon, RunningIcon, TodoIcon } from "./icons";
 interface KanbanCardProps {
   item: JobResponse;
   onCancel?: (jobId: string) => void;
+  onOpen?: (jobId: string) => void;
 }
 
-export function KanbanCard({ item, onCancel }: KanbanCardProps) {
+export function KanbanCard({ item, onCancel, onOpen }: KanbanCardProps) {
   const { job, output, queue_rank } = item;
   const statusIcon =
     job.status === "queued" ? (
@@ -51,6 +52,13 @@ export function KanbanCard({ item, onCancel }: KanbanCardProps) {
           Cancel
         </button>
       ) : null}
+      <button
+        className="app-theme-toggle mt-2 rounded px-2 py-1 text-xs font-medium"
+        onClick={() => onOpen?.(job.id)}
+        type="button"
+      >
+        Open
+      </button>
     </article>
   );
 }

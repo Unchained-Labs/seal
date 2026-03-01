@@ -1,9 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cancelJob, checkBackendHealth, enqueuePrompt, getJob, listHistory, listQueue } from "./api/otter";
+import {
+  cancelJob,
+  checkBackendHealth,
+  enqueuePrompt,
+  getJob,
+  getWorkspaceFile,
+  getWorkspaceTree,
+  listHistory,
+  listProjects,
+  listQueue,
+  listWorkspaces
+} from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
-import { MicrophoneIcon, PulseIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
+import { MicrophoneIcon, StopIcon, TerminalIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
-import type { HistoryItem, JobResponse, QueueItem } from "./types";
+import type {
+  HistoryItem,
+  JobResponse,
+  Project,
+  QueueItem,
+  Workspace,
+  WorkspaceFileResponse,
+  WorkspaceTreeResponse
+} from "./types";
 
 interface SpeechRecognitionResultAlternative {
   transcript: string;
@@ -80,8 +99,14 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
   };
 }
 
+function detectFirstUrl(input: string): string | null {
+  const match = input.match(/https?:\/\/[^\s)]+/);
+  return match?.[0] ?? null;
+}
+
 export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
+  const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
   const [priority, setPriority] = useState(100);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +114,14 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
+  const [workspaceTree, setWorkspaceTree] = useState<WorkspaceTreeResponse | null>(null);
+  const [selectedFile, setSelectedFile] = useState<WorkspaceFileResponse | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [modalFullscreen, setModalFullscreen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const healthCheckInFlightRef = useRef(false);
 
@@ -102,19 +135,12 @@ export default function App() {
     const queueById = new Map<string, QueueItem>(queue.map((item) => [item.job_id, item]));
     const historyById = new Map<string, HistoryItem>(history.map((item) => [item.job_id, item]));
     const jobIds = Array.from(new Set([...queueById.keys(), ...historyById.keys()]));
-
     const mapped = await Promise.all(
       jobIds.map(async (jobId) => {
         try {
           const detail = await getJob(jobId);
           const queuedItem = queueById.get(jobId);
-          return [
-            jobId,
-            {
-              ...detail,
-              queue_rank: queuedItem?.queue_rank ?? detail.queue_rank
-            }
-          ] as const;
+          return [jobId, { ...detail, queue_rank: queuedItem?.queue_rank ?? detail.queue_rank }] as const;
         } catch {
           const queuedItem = queueById.get(jobId);
           if (queuedItem) {
@@ -137,13 +163,11 @@ export default function App() {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(JOB_CACHE_KEY);
-      if (!raw) {
-        return;
+      if (raw) {
+        setJobs(JSON.parse(raw) as Record<string, JobResponse>);
       }
-      const parsed = JSON.parse(raw) as Record<string, JobResponse>;
-      setJobs(parsed);
     } catch {
-      // Ignore malformed cache and continue with live refresh.
+      // Ignore malformed cache.
     }
   }, []);
 
@@ -151,7 +175,7 @@ export default function App() {
     try {
       window.localStorage.setItem(JOB_CACHE_KEY, JSON.stringify(jobs));
     } catch {
-      // Ignore storage quota/cache errors.
+      // Ignore quota/storage issues.
     }
   }, [jobs]);
 
@@ -175,6 +199,22 @@ export default function App() {
   }, [refreshJobs]);
 
   useEffect(() => {
+    const refreshMetadata = async () => {
+      const [projectsResult, workspacesResult] = await Promise.allSettled([
+        listProjects(),
+        listWorkspaces()
+      ]);
+      if (projectsResult.status === "fulfilled") {
+        setProjects(projectsResult.value);
+      }
+      if (workspacesResult.status === "fulfilled") {
+        setWorkspaces(workspacesResult.value);
+      }
+    };
+    void refreshMetadata();
+  }, []);
+
+  useEffect(() => {
     let isCancelled = false;
     const refreshHealth = async (initial = false) => {
       if (healthCheckInFlightRef.current) {
@@ -192,7 +232,7 @@ export default function App() {
     };
     void refreshHealth(true);
     const interval = window.setInterval(() => {
-      void refreshHealth(false);
+      void refreshHealth();
     }, 5000);
     return () => {
       isCancelled = true;
@@ -258,6 +298,16 @@ export default function App() {
   }, []);
 
   const handleEvent = useCallback((event: OtterEventPayload) => {
+    if (event.event_type === "output_chunk") {
+      const payload = event.payload as { stream?: string; line?: string } | undefined;
+      const line = payload?.line?.trim();
+      if (line) {
+        setLiveOutputByJob((prev) => ({
+          ...prev,
+          [event.job_id]: [...(prev[event.job_id] ?? []), `[${payload?.stream ?? "stdout"}] ${line}`]
+        }));
+      }
+    }
     void getJob(event.job_id)
       .then((job) => {
         setJobs((prev) => ({ ...prev, [event.job_id]: job }));
@@ -274,6 +324,7 @@ export default function App() {
     setError(null);
     try {
       const job = await enqueuePrompt({
+        workspace_id: selectedWorkspaceId || undefined,
         prompt,
         priority
       });
@@ -301,6 +352,34 @@ export default function App() {
       setJobs((prev) => ({ ...prev, [jobId]: refreshed }));
     } catch (err: unknown) {
       setBackendHealth("offline");
+      setError(String(err));
+    }
+  };
+
+  const handleSelectWorkspace = async (workspaceId: string) => {
+    setSelectedWorkspaceId(workspaceId);
+    if (!workspaceId) {
+      setWorkspaceTree(null);
+      setSelectedFile(null);
+      return;
+    }
+    try {
+      const tree = await getWorkspaceTree(workspaceId, "", 2);
+      setWorkspaceTree(tree);
+      setSelectedFile(null);
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  };
+
+  const handleOpenFile = async (relativePath: string) => {
+    if (!selectedWorkspaceId) {
+      return;
+    }
+    try {
+      const file = await getWorkspaceFile(selectedWorkspaceId, relativePath);
+      setSelectedFile(file);
+    } catch (err: unknown) {
       setError(String(err));
     }
   };
@@ -338,12 +417,27 @@ export default function App() {
     }
   };
 
-  const backendHealthLabel =
-    backendHealth === "online" ? "Backend connection: live" : backendHealth === "offline" ? "Backend connection: offline" : "Checking backend connection";
+  const selectedJob = useMemo(
+    () => (selectedJobId ? jobs[selectedJobId] ?? null : null),
+    [jobs, selectedJobId]
+  );
+  const selectedLiveOutput = useMemo(
+    () => (selectedJobId ? liveOutputByJob[selectedJobId] ?? [] : []),
+    [liveOutputByJob, selectedJobId]
+  );
+  const autoDetectedUrl = useMemo(() => {
+    const output = selectedJob?.output?.assistant_output ?? "";
+    const live = selectedLiveOutput.join("\n");
+    return detectFirstUrl(`${output}\n${live}`) ?? "";
+  }, [selectedJob, selectedLiveOutput]);
+  const workspaceNameById = useMemo(
+    () => new Map(workspaces.map((workspace) => [workspace.id, workspace.name])),
+    [workspaces]
+  );
 
   return (
     <main className="app-root min-h-screen px-4 py-4 sm:px-6">
-      <div className="app-shell mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1600px] flex-col gap-4 p-4 sm:p-6">
+      <div className="app-shell mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col gap-4 p-4 sm:p-6">
         <header className="app-header">
           <div className="space-y-1">
             <p className="app-label">Seal</p>
@@ -356,11 +450,9 @@ export default function App() {
           <div className="flex items-center gap-2">
             <div
               className={`app-health-indicator app-health-indicator--${backendHealth}`}
-              data-tooltip={backendHealthLabel}
-              aria-label={backendHealthLabel}
-            >
-              <PulseIcon className="h-4 w-4" />
-            </div>
+              data-tooltip={`Backend: ${backendHealth}`}
+              aria-label={`Backend: ${backendHealth}`}
+            />
             <button
               className="app-theme-toggle rounded-lg px-3 py-2 text-xs font-semibold"
               onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
@@ -416,6 +508,20 @@ export default function App() {
             >
               Add Task
             </button>
+            <select
+              className="app-input rounded-lg px-3 py-2 text-sm md:col-span-3"
+              value={selectedWorkspaceId}
+              onChange={(event) => {
+                void handleSelectWorkspace(event.target.value);
+              }}
+            >
+              <option value="">Auto workspace (server default)</option>
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name} — {workspace.root_path}
+                </option>
+              ))}
+            </select>
           </form>
           <div className="app-stats-grid">
             <div className="app-stat"><span>Total</span><strong>{stats.total}</strong></div>
@@ -430,10 +536,125 @@ export default function App() {
           <div className="rounded-lg border border-red-700 bg-red-950/30 p-3 text-sm text-red-300">{error}</div>
         ) : null}
 
-        <div className="flex-1">
-          <KanbanBoard jobs={jobList} onCancel={handleCancel} />
+        <div className="grid flex-1 gap-4 xl:grid-cols-[360px_1fr]">
+          <aside className="app-panel flex min-h-[22rem] flex-col gap-3 p-3">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--app-subtle)]">Projects</h2>
+            <div className="flex max-h-32 flex-col gap-2 overflow-auto">
+              {projects.length === 0 ? (
+                <p className="text-xs text-[var(--app-muted-text)]">No projects</p>
+              ) : (
+                projects.map((project) => (
+                  <div key={project.id} className="rounded border border-[var(--app-muted-border)] p-2 text-xs">
+                    <p className="font-semibold text-[var(--app-heading)]">{project.name}</p>
+                    {project.description ? <p className="text-[var(--app-subtle)]">{project.description}</p> : null}
+                  </div>
+                ))
+              )}
+            </div>
+            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--app-subtle)]">Workspace files</h2>
+            <div className="flex max-h-40 flex-col gap-2 overflow-auto">
+              {workspaceTree?.entries?.length ? (
+                workspaceTree.entries.map((entry) => (
+                  <button
+                    key={entry.relative_path}
+                    className="rounded border border-[var(--app-muted-border)] px-2 py-1 text-left text-xs"
+                    onClick={() => {
+                      if (entry.kind === "file") {
+                        void handleOpenFile(entry.relative_path);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <span className="font-semibold">{entry.kind === "directory" ? "DIR" : "FILE"}</span> {entry.relative_path}
+                  </button>
+                ))
+              ) : (
+                <p className="text-xs text-[var(--app-muted-text)]">Select a workspace to browse files.</p>
+              )}
+            </div>
+            {selectedFile ? (
+              <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
+                <p className="mb-1 text-xs font-semibold text-[var(--app-heading)]">{selectedFile.relative_path}</p>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
+                  {selectedFile.content}
+                </pre>
+              </div>
+            ) : null}
+          </aside>
+
+          <div className="flex-1">
+            <KanbanBoard jobs={jobList} onCancel={handleCancel} onOpen={setSelectedJobId} />
+          </div>
         </div>
       </div>
+
+      {selectedJob ? (
+        <div className={`fixed inset-0 z-50 bg-black/60 p-4 ${modalFullscreen ? "" : "md:p-8"}`}>
+          <div
+            className={`mx-auto flex h-full flex-col gap-3 overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] p-4 ${
+              modalFullscreen ? "w-full" : "max-w-6xl"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-[var(--app-heading)]">
+                {selectedJob.job.prompt}
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  className="app-theme-toggle rounded px-2 py-1 text-xs"
+                  onClick={() => setModalFullscreen((prev) => !prev)}
+                  type="button"
+                >
+                  {modalFullscreen ? "Windowed" : "Fullscreen"}
+                </button>
+                <button
+                  className="app-button-danger rounded px-2 py-1 text-xs"
+                  onClick={() => setSelectedJobId(null)}
+                  type="button"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-[var(--app-subtle)]">
+              Status: {selectedJob.job.status} • Workspace: {workspaceNameById.get(selectedJob.job.workspace_id) ?? selectedJob.job.workspace_id}
+            </p>
+            <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-2">
+              <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
+                <p className="mb-1 text-xs font-semibold">Live terminal output</p>
+                <pre className="h-full max-h-[30rem] overflow-auto whitespace-pre-wrap text-[11px]">
+                  {selectedLiveOutput.length ? selectedLiveOutput.join("\n") : "No live chunks yet."}
+                </pre>
+              </section>
+              <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
+                <p className="mb-1 text-xs font-semibold">Result</p>
+                <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[11px]">
+                  {selectedJob.output?.assistant_output ?? "No final output yet."}
+                </pre>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    className="app-input flex-1 rounded px-2 py-1 text-xs"
+                    placeholder="https://localhost:3000"
+                    value={previewUrl || autoDetectedUrl}
+                    onChange={(event) => setPreviewUrl(event.target.value)}
+                  />
+                </div>
+                {(previewUrl || autoDetectedUrl) ? (
+                  <iframe
+                    className="mt-2 h-64 w-full rounded border border-[var(--app-muted-border)] bg-white"
+                    src={previewUrl || autoDetectedUrl}
+                    title="Workspace app preview"
+                  />
+                ) : (
+                  <p className="mt-2 text-xs text-[var(--app-muted-text)]">
+                    No preview URL detected yet. Paste one from output/logs to run browser-in-browser.
+                  </p>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

@@ -210,13 +210,10 @@ body {
 .app-health-indicator {
   position: relative;
   display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--app-muted-border);
+  width: 1rem;
+  height: 1rem;
   border-radius: 999px;
-  width: 2rem;
-  height: 2rem;
-  justify-content: center;
-  cursor: default;
+  border: 1px solid var(--app-muted-border);
 }
 
 .app-health-indicator::after {
@@ -226,15 +223,15 @@ body {
   top: calc(100% + 0.4rem);
   white-space: nowrap;
   opacity: 0;
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   pointer-events: none;
   transition: opacity 120ms ease, transform 120ms ease;
   border: 1px solid var(--app-muted-border);
   background: var(--app-surface);
   color: var(--app-text);
-  font-size: 0.72rem;
-  border-radius: 0.45rem;
-  padding: 0.25rem 0.45rem;
+  font-size: 0.7rem;
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.4rem;
   z-index: 20;
 }
 
@@ -244,18 +241,15 @@ body {
 }
 
 .app-health-indicator--online {
-  color: #22c55e;
-  background: color-mix(in oklab, #22c55e 14%, var(--app-card));
+  background: #16a34a;
 }
 
 .app-health-indicator--offline {
-  color: #ef4444;
-  background: color-mix(in oklab, #ef4444 16%, var(--app-card));
+  background: #dc2626;
 }
 
 .app-health-indicator--checking {
-  color: #f59e0b;
-  background: color-mix(in oklab, #f59e0b 16%, var(--app-card));
+  background: #d97706;
 }
 
 @media (max-width: 900px) {
