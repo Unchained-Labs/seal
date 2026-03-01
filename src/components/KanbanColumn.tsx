@@ -24,7 +24,7 @@ export function KanbanColumn({
   icon
 }: KanbanColumnProps) {
   return (
-    <section className="app-column flex min-h-[22rem] flex-col gap-3 p-3">
+    <section className="app-column flex min-h-0 flex-col gap-3 p-3">
       <header className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
           {icon ? <span className="text-[var(--app-accent)]">{icon}</span> : null}
@@ -34,7 +34,7 @@ export function KanbanColumn({
           {items.length}
         </span>
       </header>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
         {items.length === 0 ? (
           <div className="rounded border border-dashed border-[var(--app-muted-border)] p-3 text-xs text-[var(--app-muted-text)]">
             No jobs

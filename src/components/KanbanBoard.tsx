@@ -19,7 +19,7 @@ export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragS
   const blockedFailed = jobs.filter((item) => item.job.status === "failed");
 
   return (
-    <div className="grid h-full gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+    <div className="grid h-full max-h-[calc(100vh-16rem)] min-h-0 gap-4 overflow-hidden lg:grid-cols-2 2xl:grid-cols-4">
       <KanbanColumn
         title="Todo"
         items={todo}
@@ -30,28 +30,28 @@ export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragS
         onDropOnCard={(targetJobId) => {
           onReorderTodo(targetJobId);
         }}
-        icon={<TodoIcon className="h-5 w-5" />}
+        icon={<TodoIcon className="h-4 w-4" />}
       />
       <KanbanColumn
         title="Running"
         items={running}
         onCancel={onCancel}
         onOpen={onOpen}
-        icon={<RunningIcon className="h-5 w-5" />}
+        icon={<RunningIcon className="h-4 w-4" />}
       />
       <KanbanColumn
         title="Done"
         items={done}
         onCancel={onCancel}
         onOpen={onOpen}
-        icon={<DoneIcon className="h-5 w-5" />}
+        icon={<DoneIcon className="h-3.5 w-3.5" />}
       />
       <KanbanColumn
         title="Blocked / Failed"
         items={blockedFailed}
         onCancel={onCancel}
         onOpen={onOpen}
-        icon={<FailedIcon className="h-5 w-5" />}
+        icon={<FailedIcon className="h-4 w-4" />}
       />
     </div>
   );

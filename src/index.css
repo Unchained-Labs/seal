@@ -4,6 +4,10 @@
 
 @layer base {
   :root {
+    --palette-bg: #00052b;
+    --palette-mint: #4bffca;
+    --palette-purple: #8024e7;
+    --palette-lavender: #b187ff;
     --app-bg: #00052b;
     --app-surface: #0b1144;
     --app-panel: #121a58;
@@ -11,9 +15,9 @@
     --app-text: #e8f4ff;
     --app-heading: #f4f7ff;
     --app-subtle: #b9c9ff;
-    --app-accent: #4bffca;
-    --app-accent-alt: #b187ff;
-    --app-purple: #8024e7;
+    --app-accent: #38c9a3;
+    --app-accent-alt: #947ac7;
+    --app-purple: #6d3cb2;
     --app-border: #3a4aa2;
     --app-muted-border: #2d3d8e;
     --app-muted-text: #9bb0ff;
@@ -51,8 +55,8 @@ body {
   font-family: "Avenir Next", "Nunito", "Space Grotesk", Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     sans-serif;
   background:
-    radial-gradient(circle at 8% 6%, color-mix(in oklab, var(--app-accent-alt) 22%, transparent) 0%, transparent 42%),
-    radial-gradient(circle at 90% 8%, color-mix(in oklab, var(--app-accent) 16%, transparent) 0%, transparent 44%),
+    radial-gradient(circle at 8% 6%, color-mix(in oklab, var(--palette-lavender) 10%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 90% 8%, color-mix(in oklab, var(--palette-mint) 8%, transparent) 0%, transparent 42%),
     var(--app-bg);
   color: var(--app-text);
 }
@@ -69,7 +73,7 @@ body {
   border: 1px solid var(--app-border);
   border-radius: 1.1rem;
   background:
-    linear-gradient(180deg, color-mix(in oklab, var(--app-surface) 90%, var(--app-purple) 10%), var(--app-surface));
+    linear-gradient(180deg, color-mix(in oklab, var(--app-surface) 94%, var(--app-purple) 6%), var(--app-surface));
   box-shadow:
     0 16px 50px -30px rgba(0, 0, 0, 0.55),
     0 1px 0 color-mix(in oklab, var(--app-accent) 20%, transparent) inset;
@@ -133,7 +137,7 @@ body {
   border: 1px solid var(--app-muted-border);
   border-radius: 0.8rem;
   padding: 0.55rem 0.65rem;
-  background: color-mix(in oklab, var(--app-card) 86%, var(--app-purple) 14%);
+  background: color-mix(in oklab, var(--app-card) 92%, var(--app-purple) 8%);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -188,8 +192,8 @@ body {
   height: 2.8rem;
   background: linear-gradient(
     135deg,
-    color-mix(in oklab, var(--app-card) 82%, var(--app-purple) 18%),
-    color-mix(in oklab, var(--app-card) 88%, var(--app-accent) 12%)
+    color-mix(in oklab, var(--app-card) 90%, var(--app-purple) 10%),
+    color-mix(in oklab, var(--app-card) 94%, var(--app-accent) 6%)
   );
   color: var(--app-heading);
   cursor: pointer;
@@ -208,14 +212,14 @@ body {
   border: 1px solid var(--app-border);
   background: linear-gradient(
     135deg,
-    color-mix(in oklab, var(--app-accent) 75%, white 25%),
-    color-mix(in oklab, var(--app-purple) 45%, var(--app-accent-alt) 55%)
+    color-mix(in oklab, var(--palette-mint) 52%, white 48%),
+    color-mix(in oklab, var(--palette-purple) 22%, var(--palette-lavender) 78%)
   );
   color: #00052b;
 }
 
 .app-button-primary:hover {
-  filter: saturate(1.1);
+  filter: saturate(1.02);
 }
 
 .app-button-danger {
@@ -239,7 +243,7 @@ body {
   align-items: center;
   gap: 0.35rem;
   border: 1px solid var(--app-muted-border);
-  background: color-mix(in oklab, var(--app-card) 86%, var(--app-accent) 14%);
+  background: color-mix(in oklab, var(--app-card) 93%, var(--app-accent) 7%);
   color: var(--app-text);
 }
 
@@ -277,7 +281,7 @@ body {
 }
 
 .app-health-indicator--online {
-  background: #4bffca;
+  background: var(--app-accent);
 }
 
 .app-health-indicator--offline {
@@ -285,7 +289,7 @@ body {
 }
 
 .app-health-indicator--checking {
-  background: #b187ff;
+  background: var(--app-accent-alt);
 }
 
 /* Scrollbar styling */
@@ -316,7 +320,7 @@ body {
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in oklab, var(--app-accent-alt) 85%, var(--app-accent));
+  background: color-mix(in oklab, var(--app-accent-alt) 65%, var(--app-accent));
 }
 
 .app-markdown {
