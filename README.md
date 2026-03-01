@@ -45,6 +45,8 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - status bubbles with icons and color coding
   - running/completion duration labels
   - latest streamed output preview line
+  - human-readable creation timestamp
+  - cancelled jobs grouped under `Blocked / Failed`
 - Modal-level runtime feedback:
   - left result panel includes live build stream tail with normalized formatting
   - result panel
@@ -68,6 +70,15 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
 - Main page runs commands in default auto workspace (`POST /v1/workspaces/command`).
 - Prompting flow does not require manual workspace selection.
 - Task modal terminal can execute in the job workspace when available.
+- Composer mode uses a compact voice/text icon switch with fixed-height layout parity.
+
+## Kanban Filters And Sorting
+
+- Prompt text filter (search by task description).
+- Status filter (`All`, `Queued`, `Running`, `Done/Cancelled`, `Failed`).
+- Voice filter (`All`, `With voice`, `Without voice`).
+- Sort modes (`Workflow`, `Created`, `Updated` asc/desc variants).
+- One-click reset to restore default board view.
 
 ## Observability
 
