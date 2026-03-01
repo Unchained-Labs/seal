@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   cancelJob,
   checkBackendHealth,
@@ -103,6 +105,16 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
 function detectFirstUrl(input: string): string | null {
   const match = input.match(/https?:\/\/[^\s)]+/);
   return match?.[0] ?? null;
+}
+
+function isMarkdownLikeFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  return (
+    lower.endsWith(".md") ||
+    lower.endsWith(".markdown") ||
+    lower.endsWith(".mdx") ||
+    lower.endsWith("readme")
+  );
 }
 
 export default function App() {
@@ -630,9 +642,17 @@ export default function App() {
             {selectedFile ? (
               <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                 <p className="mb-1 text-xs font-semibold text-[var(--app-heading)]">{selectedFile.relative_path}</p>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
-                  {selectedFile.content}
-                </pre>
+                {isMarkdownLikeFile(selectedFile.relative_path) ? (
+                  <div className="app-markdown max-h-64 overflow-auto text-xs">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {selectedFile.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
+                    {selectedFile.content}
+                  </pre>
+                )}
               </div>
             ) : null}
           </aside>
