@@ -489,11 +489,11 @@ export default function App() {
         <header className="app-header">
           <div className="space-y-1">
             <p className="app-label">Seal</p>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-[var(--app-heading)] sm:text-3xl">
-              <TerminalIcon className="h-6 w-6 text-[var(--app-accent)]" />
+            <h1 className="flex items-center gap-3 text-3xl font-extrabold tracking-tight text-[var(--app-heading)] sm:text-4xl">
+              <TerminalIcon className="h-8 w-8 text-[var(--app-accent)]" />
               Builder Board
             </h1>
-            <p className="text-sm text-[var(--app-subtle)]">Minimal control surface for Otter queue orchestration.</p>
+            <p className="text-sm text-[var(--app-subtle)]">Playful control surface for Otter queue orchestration.</p>
           </div>
           <div className="flex items-center gap-2">
             <div
@@ -508,12 +508,12 @@ export default function App() {
             >
               {theme === "dark" ? (
                 <>
-                  <ThemeLightIcon className="h-4 w-4" />
+                  <ThemeLightIcon className="h-5 w-5" />
                   Light
                 </>
               ) : (
                 <>
-                  <ThemeDarkIcon className="h-4 w-4" />
+                  <ThemeDarkIcon className="h-5 w-5" />
                   Dark
                 </>
               )}
@@ -549,7 +549,7 @@ export default function App() {
                   title={isListening ? "Stop voice input" : "Start voice input"}
                   type="button"
                 >
-                  {isListening ? <StopIcon className="h-4 w-4" /> : <MicrophoneIcon className="h-4 w-4" />}
+                  {isListening ? <StopIcon className="h-5 w-5" /> : <MicrophoneIcon className="h-5 w-5" />}
                 </button>
               ) : null}
             </div>

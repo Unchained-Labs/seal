@@ -30,28 +30,28 @@ export function KanbanBoard({ jobs, onCancel, onOpen, onReorderTodo, onTodoDragS
         onDropOnCard={(targetJobId) => {
           onReorderTodo(targetJobId);
         }}
-        icon={<TodoIcon className="h-4 w-4" />}
+        icon={<TodoIcon className="h-5 w-5" />}
       />
       <KanbanColumn
         title="Running"
         items={running}
         onCancel={onCancel}
         onOpen={onOpen}
-        icon={<RunningIcon className="h-4 w-4" />}
+        icon={<RunningIcon className="h-5 w-5" />}
       />
       <KanbanColumn
         title="Done"
         items={done}
         onCancel={onCancel}
         onOpen={onOpen}
-        icon={<DoneIcon className="h-4 w-4" />}
+        icon={<DoneIcon className="h-5 w-5" />}
       />
       <KanbanColumn
         title="Blocked / Failed"
         items={blockedFailed}
         onCancel={onCancel}
         onOpen={onOpen}
-        icon={<FailedIcon className="h-4 w-4" />}
+        icon={<FailedIcon className="h-5 w-5" />}
       />
     </div>
   );

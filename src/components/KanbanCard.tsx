@@ -21,13 +21,13 @@ export function KanbanCard({
   const { job, output, queue_rank } = item;
   const statusIcon =
     job.status === "queued" ? (
-      <TodoIcon className="h-3.5 w-3.5" />
+      <TodoIcon className="h-4.5 w-4.5" />
     ) : job.status === "running" ? (
-      <RunningIcon className="h-3.5 w-3.5" />
+      <RunningIcon className="h-4.5 w-4.5" />
     ) : job.status === "failed" ? (
-      <FailedIcon className="h-3.5 w-3.5" />
+      <FailedIcon className="h-4.5 w-4.5" />
     ) : (
-      <DoneIcon className="h-3.5 w-3.5" />
+      <DoneIcon className="h-4.5 w-4.5" />
     );
 
   return (
