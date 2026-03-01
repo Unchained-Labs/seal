@@ -25,16 +25,18 @@ export function KanbanCard({
   onDropOnCard
 }: KanbanCardProps) {
   const { job, queue_rank } = item;
-  const statusIcon =
-    job.status === "queued" ? (
-      <TodoIcon className="h-3.5 w-3.5" />
-    ) : job.status === "running" ? (
-      <RunningIcon className="h-3.5 w-3.5" />
-    ) : job.status === "failed" ? (
-      <FailedIcon className="h-3.5 w-3.5" />
-    ) : (
-      <DoneIcon className="h-3 w-3" />
-    );
+  const statusMeta =
+    job.status === "queued"
+      ? { label: "In queue", bubbleClass: "app-status-bubble--queued", icon: <TodoIcon className="h-4 w-4" /> }
+      : job.status === "running"
+        ? {
+            label: "Running",
+            bubbleClass: "app-status-bubble--running",
+            icon: <RunningIcon className="h-4 w-4" />
+          }
+        : job.status === "failed"
+          ? { label: "Failed", bubbleClass: "app-status-bubble--failed", icon: <FailedIcon className="h-4 w-4" /> }
+          : { label: "Done", bubbleClass: "app-status-bubble--done", icon: <DoneIcon className="h-4 w-4" /> };
 
   return (
     <article
@@ -62,10 +64,12 @@ export function KanbanCard({
           </span>
         ) : null}
       </header>
-      <p className="flex items-center gap-1.5 text-xs text-[var(--app-subtle)]">
-        {statusIcon}
-        Status: <span className="text-[var(--app-text)]">{job.status}</span>
-      </p>
+      <div className="mt-1">
+        <span className={`app-status-bubble ${statusMeta.bubbleClass}`}>
+          {statusMeta.icon}
+          {statusMeta.label}
+        </span>
+      </div>
       <div className="mt-2 flex items-center gap-2">
         {job.status === "queued" || job.status === "running" ? (
           <button
