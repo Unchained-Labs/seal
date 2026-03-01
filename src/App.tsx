@@ -832,7 +832,7 @@ export default function App() {
             {voiceAudioByJob[selectedJob.job.id] ? (
               <div className="app-audio-panel">
                 <p className="text-xs font-semibold text-[var(--app-subtle)]">Voice Command Audio</p>
-                <div className="flex items-center gap-2">
+                <div className="grid gap-2">
                   <button
                     className="app-theme-toggle rounded px-2 py-1 text-xs"
                     type="button"
@@ -842,18 +842,7 @@ export default function App() {
                   >
                     {playingVoiceJobId === selectedJob.job.id ? "Pause Voice" : "Play Voice"}
                   </button>
-                  <audio
-                    className="app-audio-player"
-                    controls
-                    src={voiceAudioByJob[selectedJob.job.id]}
-                    onPlay={() => setPlayingVoiceJobId(selectedJob.job.id)}
-                    onPause={() =>
-                      setPlayingVoiceJobId((current) => (current === selectedJob.job.id ? null : current))
-                    }
-                    onEnded={() =>
-                      setPlayingVoiceJobId((current) => (current === selectedJob.job.id ? null : current))
-                    }
-                  />
+                  <VoicePromptPlayer src={voiceAudioByJob[selectedJob.job.id]} />
                 </div>
               </div>
             ) : null}
