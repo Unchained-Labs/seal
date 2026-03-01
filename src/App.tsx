@@ -30,6 +30,7 @@ interface SpeechRecognitionLike extends EventTarget {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 type BackendHealth = "checking" | "online" | "offline";
+const JOB_CACHE_KEY = "seal-job-cache-v1";
 
 function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null): JobResponse {
   return {
@@ -89,9 +90,15 @@ export default function App() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const healthCheckInFlightRef = useRef(false);
 
   const refreshJobs = useCallback(async () => {
-    const [queue, history] = await Promise.all([listQueue(300, 0), listHistory(300)]);
+    const [queueResult, historyResult] = await Promise.allSettled([listQueue(300, 0), listHistory(300)]);
+    const queue = queueResult.status === "fulfilled" ? queueResult.value : [];
+    const history = historyResult.status === "fulfilled" ? historyResult.value : [];
+    if (queueResult.status === "rejected" && historyResult.status === "rejected") {
+      throw new Error("Unable to load queue and history from backend.");
+    }
     const queueById = new Map<string, QueueItem>(queue.map((item) => [item.job_id, item]));
     const historyById = new Map<string, HistoryItem>(history.map((item) => [item.job_id, item]));
     const jobIds = Array.from(new Set([...queueById.keys(), ...historyById.keys()]));
@@ -123,16 +130,44 @@ export default function App() {
     );
     const entries = mapped.filter((entry): entry is readonly [string, JobResponse] => entry !== null);
     setJobs((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    setBackendHealth("online");
     setError(null);
   }, []);
 
   useEffect(() => {
-    void refreshJobs().catch((err: unknown) => setError(String(err)));
+    try {
+      const raw = window.localStorage.getItem(JOB_CACHE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Record<string, JobResponse>;
+      setJobs(parsed);
+    } catch {
+      // Ignore malformed cache and continue with live refresh.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(JOB_CACHE_KEY, JSON.stringify(jobs));
+    } catch {
+      // Ignore storage quota/cache errors.
+    }
+  }, [jobs]);
+
+  useEffect(() => {
+    void refreshJobs().catch((err: unknown) => {
+      setBackendHealth("offline");
+      setError(String(err));
+    });
   }, [refreshJobs]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      void refreshJobs().catch((err: unknown) => setError(String(err)));
+      void refreshJobs().catch((err: unknown) => {
+        setBackendHealth("offline");
+        setError(String(err));
+      });
     }, 5000);
     return () => {
       window.clearInterval(interval);
@@ -140,15 +175,27 @@ export default function App() {
   }, [refreshJobs]);
 
   useEffect(() => {
-    const refreshHealth = () => {
-      setBackendHealth((prev) => (prev === "online" ? "checking" : prev));
-      void checkBackendHealth().then((alive) => {
+    let isCancelled = false;
+    const refreshHealth = async (initial = false) => {
+      if (healthCheckInFlightRef.current) {
+        return;
+      }
+      if (initial) {
+        setBackendHealth("checking");
+      }
+      healthCheckInFlightRef.current = true;
+      const alive = await checkBackendHealth(2500);
+      healthCheckInFlightRef.current = false;
+      if (!isCancelled) {
         setBackendHealth(alive ? "online" : "offline");
-      });
+      }
     };
-    refreshHealth();
-    const interval = window.setInterval(refreshHealth, 5000);
+    void refreshHealth(true);
+    const interval = window.setInterval(() => {
+      void refreshHealth(false);
+    }, 5000);
     return () => {
+      isCancelled = true;
       window.clearInterval(interval);
     };
   }, []);
@@ -241,6 +288,7 @@ export default function App() {
       }));
       await refreshJobs();
     } catch (err: unknown) {
+      setBackendHealth("offline");
       setError(String(err));
     }
   };
@@ -252,6 +300,7 @@ export default function App() {
       const refreshed = await getJob(jobId);
       setJobs((prev) => ({ ...prev, [jobId]: refreshed }));
     } catch (err: unknown) {
+      setBackendHealth("offline");
       setError(String(err));
     }
   };

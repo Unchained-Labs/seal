@@ -15,10 +15,13 @@ export async function listQueue(limit = 200, offset = 0): Promise<QueueItem[]> {
   return jsonRequest<QueueItem[]>(`/v1/queue?limit=${limit}&offset=${offset}`);
 }
 
-export async function checkBackendHealth(): Promise<boolean> {
+export async function checkBackendHealth(timeoutMs = 3000): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${OTTER_URL}/healthz`, {
-      cache: "no-store"
+      cache: "no-store",
+      signal: controller.signal
     });
     if (!response.ok) {
       return false;
@@ -27,6 +30,8 @@ export async function checkBackendHealth(): Promise<boolean> {
     return body === "ok";
   } catch {
     return false;
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
 }
 
