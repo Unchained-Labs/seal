@@ -11,7 +11,16 @@ import {
   updateQueuePriority
 } from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
-import { MicrophoneIcon, StopIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
+import {
+  BrowserIcon,
+  CompressIcon,
+  ExpandIcon,
+  MicrophoneIcon,
+  StopIcon,
+  TerminalIcon,
+  ThemeDarkIcon,
+  ThemeLightIcon
+} from "./components/icons";
 import { VoicePromptPlayer } from "./components/VoicePromptPlayer";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
 import type {
@@ -32,6 +41,7 @@ interface TerminalHistoryEntry {
   exitCode: number | null;
   timedOut: boolean;
   createdAt: string;
+  workingDirectory: string;
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
@@ -192,6 +202,27 @@ function formatHistoryClock(iso: string): string {
   return new Date(parsed).toLocaleTimeString();
 }
 
+function normalizePreviewUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const isTargetLocal =
+      parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+    const browserHost = window.location.hostname;
+    const browserIsLocal =
+      browserHost === "localhost" || browserHost === "127.0.0.1" || browserHost === "::1";
+    if (isTargetLocal && browserHost && !browserIsLocal) {
+      parsed.hostname = browserHost;
+    }
+    return parsed.toString();
+  } catch {
+    return trimmed;
+  }
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -216,6 +247,7 @@ export default function App() {
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
   const [workspaceCommand, setWorkspaceCommand] = useState("ls -la");
   const [workspaceCommandResult, setWorkspaceCommandResult] = useState<WorkspaceCommandResponse | null>(null);
+  const [workspaceShellCwd, setWorkspaceShellCwd] = useState<string>("workspace root");
   const [workspaceCommandRunning, setWorkspaceCommandRunning] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [modalFullscreen, setModalFullscreen] = useState(false);
@@ -223,6 +255,7 @@ export default function App() {
   const [modalCommand, setModalCommand] = useState("ls -la");
   const [modalCommandRunning, setModalCommandRunning] = useState(false);
   const [modalCommandResult, setModalCommandResult] = useState<WorkspaceCommandResponse | null>(null);
+  const [modalShellCwdByJob, setModalShellCwdByJob] = useState<Record<string, string>>({});
   const [modalPreviewTab, setModalPreviewTab] = useState<"terminal" | "browser">("terminal");
   const [modalPreviewFullscreen, setModalPreviewFullscreen] = useState(false);
   const [modalTerminalHistoryByJob, setModalTerminalHistoryByJob] = useState<
@@ -492,9 +525,11 @@ export default function App() {
       const result = await runWorkspaceCommand(undefined, {
         workspace_id: undefined,
         command: workspaceCommand,
+        shell_session_id: "workspace-shell",
         timeout_seconds: 120
       });
       setWorkspaceCommandResult(result);
+      setWorkspaceShellCwd(result.working_directory);
     } catch (err: unknown) {
       setError(String(err));
     } finally {
@@ -663,7 +698,7 @@ export default function App() {
     const live = selectedLiveOutput.join("\n");
     return detectFirstUrl(`${output}\n${live}`) ?? "";
   }, [selectedJob, selectedLiveOutput]);
-  const activePreviewUrl = previewUrl.trim() || autoDetectedUrl;
+  const activePreviewUrl = normalizePreviewUrl(previewUrl.trim() || autoDetectedUrl);
   const handleRunTaskTerminalCommand = async () => {
     if (!selectedJobId) {
       return;
@@ -678,9 +713,14 @@ export default function App() {
       const result = await runWorkspaceCommand(workspaceId, {
         workspace_id: workspaceId,
         command: modalCommand,
+        shell_session_id: selectedJobId,
         timeout_seconds: 120
       });
       setModalCommandResult(result);
+      setModalShellCwdByJob((prev) => ({
+        ...prev,
+        [selectedJobId]: result.working_directory
+      }));
       const entry: TerminalHistoryEntry = {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         command: modalCommand,
@@ -688,7 +728,8 @@ export default function App() {
         stderr: result.stderr ?? "",
         exitCode: result.exit_code ?? null,
         timedOut: result.timed_out ?? false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        workingDirectory: result.working_directory
       };
       setModalTerminalHistoryByJob((prev) => ({
         ...prev,
@@ -878,6 +919,9 @@ export default function App() {
                 </button>
               </div>
               <p className="text-xs text-[var(--app-muted-text)]">Runs in the default auto workspace.</p>
+              <p className="text-[11px] text-[var(--app-subtle)]">
+                cwd: <code>{workspaceShellCwd}</code>
+              </p>
               {workspaceCommandResult ? (
                 <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                   <p className="text-[11px] text-[var(--app-subtle)]">
@@ -987,8 +1031,12 @@ export default function App() {
                 <pre className="app-terminal-output max-h-32 overflow-auto whitespace-pre-wrap text-[11px]">
                   {selectedJob.output?.assistant_output ?? "No final output yet."}
                 </pre>
+                <p className="mb-1 mt-2 text-xs font-semibold">Recent live build stream</p>
+                <pre className="app-terminal-output max-h-52 overflow-auto whitespace-pre-wrap text-[11px]">
+                  {selectedLiveOutput.length ? selectedLiveOutput.slice(-120).join("\n") : "No live chunks yet."}
+                </pre>
                 <p className="mt-2 text-xs text-[var(--app-muted-text)]">
-                  Use the tabbed panel to switch between Browser and Terminal views.
+                  Preview URLs using localhost are rewritten to this host when needed.
                 </p>
               </section>
               <section
@@ -1005,28 +1053,34 @@ export default function App() {
                       className={`app-tab-button ${modalPreviewTab === "terminal" ? "app-tab-button--active" : ""}`}
                       onClick={() => setModalPreviewTab("terminal")}
                     >
-                      Terminal
+                      <TerminalIcon className="h-4 w-4" />
+                      Workspace Shell
                     </button>
                     <button
                       type="button"
                       className={`app-tab-button ${modalPreviewTab === "browser" ? "app-tab-button--active" : ""}`}
                       onClick={() => setModalPreviewTab("browser")}
                     >
+                      <BrowserIcon className="h-4 w-4" />
                       Browser
                     </button>
                   </div>
                   <button
                     type="button"
-                    className="app-theme-toggle rounded px-2 py-1 text-xs"
+                    className="app-theme-toggle inline-flex items-center gap-1 rounded px-2 py-1 text-xs"
                     onClick={() => setModalPreviewFullscreen((prev) => !prev)}
                   >
-                    {modalPreviewFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                    {modalPreviewFullscreen ? <CompressIcon className="h-4 w-4" /> : <ExpandIcon className="h-4 w-4" />}
+                    {modalPreviewFullscreen ? "Exit" : "Fullscreen"}
                   </button>
                 </div>
                 {modalPreviewTab === "terminal" ? (
                   <div className="flex min-h-0 flex-1 flex-col gap-2">
                     <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
                       <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Run command in workspace</p>
+                      <p className="mb-1 text-[11px] text-[var(--app-subtle)]">
+                        cwd: <code>{selectedJobId ? (modalShellCwdByJob[selectedJobId] ?? "workspace root") : "workspace root"}</code>
+                      </p>
                       <div className="flex gap-2">
                         <input
                           className="app-input flex-1 rounded px-2 py-1 text-xs"
@@ -1058,43 +1112,36 @@ export default function App() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="grid min-h-0 flex-1 gap-2 xl:grid-cols-2">
-                      <div className="flex min-h-0 flex-col rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
-                        <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Live build stream</p>
-                        <pre className="app-terminal-output h-full overflow-auto whitespace-pre-wrap text-[11px]">
-                          {selectedLiveOutput.length ? selectedLiveOutput.join("\n") : "No live chunks yet."}
-                        </pre>
-                      </div>
-                      <div className="flex min-h-0 flex-col rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
-                        <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Workspace shell history</p>
-                        <div className="app-terminal-shell h-full overflow-auto">
-                          {selectedTerminalHistory.length ? (
-                            selectedTerminalHistory.map((entry) => (
-                              <div key={entry.id} className="app-terminal-entry">
-                                <p className="app-terminal-entry__command">
-                                  <span className="app-terminal-entry__time">
-                                    [{formatHistoryClock(entry.createdAt)}]
-                                  </span>{" "}
-                                  <span className="app-terminal-entry__prompt">$</span> {entry.command}
-                                </p>
-                                {entry.stdout ? (
-                                  <pre className="app-terminal-entry__output">{entry.stdout}</pre>
-                                ) : null}
-                                {entry.stderr ? (
-                                  <pre className="app-terminal-entry__error">{entry.stderr}</pre>
-                                ) : null}
-                                <p className="app-terminal-entry__status">
-                                  exit {entry.exitCode ?? "N/A"}
-                                  {entry.timedOut ? " (timed out)" : ""}
-                                </p>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-[var(--app-muted-text)]">
-                              No command history yet. Run a command to build history.
-                            </p>
-                          )}
-                        </div>
+                    <div className="min-h-0 flex-1 rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
+                      <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Workspace shell history</p>
+                      <div className="app-terminal-shell h-full overflow-auto">
+                        {selectedTerminalHistory.length ? (
+                          selectedTerminalHistory.map((entry) => (
+                            <div key={entry.id} className="app-terminal-entry">
+                              <p className="app-terminal-entry__command">
+                                <span className="app-terminal-entry__time">
+                                  [{formatHistoryClock(entry.createdAt)}]
+                                </span>{" "}
+                                <span className="app-terminal-entry__cwd">({entry.workingDirectory})</span>{" "}
+                                <span className="app-terminal-entry__prompt">$</span> {entry.command}
+                              </p>
+                              {entry.stdout ? (
+                                <pre className="app-terminal-entry__output">{entry.stdout}</pre>
+                              ) : null}
+                              {entry.stderr ? (
+                                <pre className="app-terminal-entry__error">{entry.stderr}</pre>
+                              ) : null}
+                              <p className="app-terminal-entry__status">
+                                exit {entry.exitCode ?? "N/A"}
+                                {entry.timedOut ? " (timed out)" : ""}
+                              </p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-xs text-[var(--app-muted-text)]">
+                            No command history yet. Run a command to build history.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
