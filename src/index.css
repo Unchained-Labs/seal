@@ -88,6 +88,18 @@ body {
   border: 1px solid var(--app-muted-border);
 }
 
+.app-board-controls {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.3fr) repeat(3, minmax(9rem, 1fr)) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.app-board-control {
+  font-size: 0.8rem;
+  padding: 0.38rem 0.55rem;
+}
+
 .app-panel,
 .app-column {
   background: var(--app-panel);
@@ -576,7 +588,17 @@ kbd {
   border: 1px solid color-mix(in oklab, var(--app-muted-border) 72%, transparent);
   border-radius: 0.6rem;
   padding: 0.6rem;
-  background: color-mix(in oklab, #000 22%, var(--app-card) 78%);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--app-accent) 7%, transparent) 0px,
+      color-mix(in oklab, var(--app-accent) 7%, transparent) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(circle at 50% 0%, color-mix(in oklab, var(--app-accent) 12%, transparent), transparent 55%),
+    color-mix(in oklab, #000 22%, var(--app-card) 78%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--app-accent) 18%, transparent);
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -645,6 +667,69 @@ kbd {
   background: var(--app-card);
 }
 
+.app-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-muted-border);
+  background: color-mix(in oklab, var(--app-card) 82%, var(--app-surface) 18%);
+}
+
+.app-mode-switch__icon {
+  color: var(--app-muted-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-mode-switch__icon.is-active {
+  color: var(--app-heading);
+}
+
+.app-mode-switch__input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-mode-switch__track {
+  width: 2.25rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: color-mix(in oklab, var(--app-bg) 45%, var(--app-surface) 55%);
+  padding: 0.1rem;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.app-mode-switch__thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--app-accent) 76%, white 24%);
+  transform: translateX(0);
+  transition: transform 160ms ease;
+}
+
+.app-mode-switch__input:checked + .app-mode-switch__track .app-mode-switch__thumb {
+  transform: translateX(1rem);
+}
+
+.app-composer-mode-panel {
+  min-height: 14rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-text-stage {
+  width: min(46rem, 100%);
+}
+
 .app-footer {
   border-top: 1px solid var(--app-muted-border);
   margin-top: auto;
@@ -654,6 +739,10 @@ kbd {
 }
 
 @media (max-width: 900px) {
+  .app-board-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .app-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

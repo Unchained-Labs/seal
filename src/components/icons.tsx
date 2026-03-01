@@ -121,6 +121,15 @@ export function MicrophoneIcon(props: IconProps) {
   );
 }
 
+export function TextModeIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="4" y="5.5" width="16" height="13" rx="2" />
+      <path d="M7.5 9h9M7.5 12h9M7.5 15h6" />
+    </BaseIcon>
+  );
+}
+
 export function StopIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

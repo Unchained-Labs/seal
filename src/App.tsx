@@ -18,6 +18,7 @@ import {
   MicrophoneIcon,
   StopIcon,
   TerminalIcon,
+  TextModeIcon,
   ThemeDarkIcon,
   ThemeLightIcon
 } from "./components/icons";
@@ -42,6 +43,11 @@ interface TerminalHistoryEntry {
   timedOut: boolean;
   createdAt: string;
   workingDirectory: string;
+}
+
+interface UiToast {
+  id: string;
+  message: string;
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
@@ -168,6 +174,12 @@ function formatStreamingLine(line: string): string {
       (parsed.delta && typeof parsed.delta === "object"
         ? pickTextField((parsed.delta as { content?: unknown }).content)
         : null);
+    if (role === "system" || role === "user") {
+      return "";
+    }
+    if (role === "assistant" && content) {
+      return content;
+    }
     if (role && content) {
       return `${role}: ${content}`;
     }
@@ -183,9 +195,22 @@ function formatStreamingLine(line: string): string {
   }
 }
 
+function shouldSuppressLiveLine(line: string): boolean {
+  const probe = line.toLowerCase();
+  return (
+    probe.includes("system requirements") ||
+    probe.includes("user task:") ||
+    probe.includes("work in a project-specific subfolder") ||
+    probe.includes("always create a setup script")
+  );
+}
+
 function formatLiveOutputLine(stream: string | undefined, line: string): string {
   const normalized = formatStreamingLine(line);
   if (!normalized) {
+    return "";
+  }
+  if (shouldSuppressLiveLine(normalized)) {
     return "";
   }
   if (stream === "stderr") {
@@ -241,13 +266,12 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
-  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [voiceAudioByJob, setVoiceAudioByJob] = useState<Record<string, string>>({});
   const [playingVoiceJobId, setPlayingVoiceJobId] = useState<string | null>(null);
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
   const [workspaceCommand, setWorkspaceCommand] = useState("ls -la");
-  const [workspaceCommandResult, setWorkspaceCommandResult] = useState<WorkspaceCommandResponse | null>(null);
   const [workspaceShellCwd, setWorkspaceShellCwd] = useState<string>("workspace root");
+  const [workspaceTerminalHistory, setWorkspaceTerminalHistory] = useState<TerminalHistoryEntry[]>([]);
   const [workspaceCommandRunning, setWorkspaceCommandRunning] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [modalFullscreen, setModalFullscreen] = useState(false);
@@ -262,13 +286,18 @@ export default function App() {
     Record<string, TerminalHistoryEntry[]>
   >({});
   const [draggedTodoJobId, setDraggedTodoJobId] = useState<string | null>(null);
-  const [showWriteInput, setShowWriteInput] = useState(false);
+  const [composerMode, setComposerMode] = useState<"voice" | "text">("voice");
+  const [toasts, setToasts] = useState<UiToast[]>([]);
   const formRef = useRef<HTMLFormElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const healthCheckInFlightRef = useRef(false);
   const pushToTalkActiveRef = useRef(false);
+  const seenCompletedEventsRef = useRef<Set<string>>(new Set());
+  const workspaceTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
+  const modalTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
+  const resultLiveStreamRef = useRef<HTMLPreElement | null>(null);
   const voiceSupported =
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices &&
@@ -424,6 +453,22 @@ export default function App() {
     } else {
       console.info("[seal-events]", event.event_type, { jobId: event.job_id });
     }
+    if (event.event_type === "completed") {
+      const dedupeKey = `${event.job_id}:${event.event_type}`;
+      if (!seenCompletedEventsRef.current.has(dedupeKey)) {
+        seenCompletedEventsRef.current.add(dedupeKey);
+        const shortId = event.job_id.slice(0, 8);
+        const toastId = `${Date.now()}-${shortId}`;
+        const message = `Job ${shortId} completed`;
+        setToasts((prev) => [...prev, { id: toastId, message }].slice(-4));
+        window.setTimeout(() => {
+          setToasts((prev) => prev.filter((toast) => toast.id !== toastId));
+        }, 5000);
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          new Notification("Otter job completed", { body: message });
+        }
+      }
+    }
     void getJob(event.job_id)
       .then((job) => {
         setJobs((prev) => ({ ...prev, [event.job_id]: job }));
@@ -483,7 +528,6 @@ export default function App() {
         return;
       }
       const dataUrl = await blobToDataUrl(audioBlob);
-      setRecordedAudioUrl(dataUrl);
       setIsVoiceProcessing(true);
       setSubmitFeedback("Transcribing voice command...");
       setError(null);
@@ -528,8 +572,18 @@ export default function App() {
         shell_session_id: "workspace-shell",
         timeout_seconds: 120
       });
-      setWorkspaceCommandResult(result);
       setWorkspaceShellCwd(result.working_directory);
+      const entry: TerminalHistoryEntry = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command: workspaceCommand,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+        exitCode: result.exit_code ?? null,
+        timedOut: result.timed_out ?? false,
+        createdAt: new Date().toISOString(),
+        workingDirectory: result.working_directory
+      };
+      setWorkspaceTerminalHistory((prev) => [...prev, entry].slice(-120));
     } catch (err: unknown) {
       setError(String(err));
     } finally {
@@ -693,6 +747,24 @@ export default function App() {
     setModalPreviewTab("terminal");
     setModalPreviewFullscreen(false);
   }, [selectedJobId]);
+  useEffect(() => {
+    const target = workspaceTerminalHistoryRef.current;
+    if (target) {
+      target.scrollTop = target.scrollHeight;
+    }
+  }, [workspaceTerminalHistory]);
+  useEffect(() => {
+    const target = modalTerminalHistoryRef.current;
+    if (target) {
+      target.scrollTop = target.scrollHeight;
+    }
+  }, [selectedTerminalHistory]);
+  useEffect(() => {
+    const target = resultLiveStreamRef.current;
+    if (target) {
+      target.scrollTop = target.scrollHeight;
+    }
+  }, [selectedLiveOutput]);
   const autoDetectedUrl = useMemo(() => {
     const output = selectedJob?.output?.assistant_output ?? "";
     const live = selectedLiveOutput.join("\n");
@@ -771,6 +843,18 @@ export default function App() {
   return (
     <main className="app-root min-h-screen px-4 py-4 sm:px-6">
       <div className="app-shell mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col gap-4 p-4 sm:p-6">
+        {toasts.length ? (
+          <div className="fixed right-4 top-4 z-[90] flex w-full max-w-xs flex-col gap-2">
+            {toasts.map((toast) => (
+              <div
+                key={toast.id}
+                className="rounded border border-[var(--app-border)] bg-[var(--app-card)] px-3 py-2 text-sm text-[var(--app-heading)] shadow-lg"
+              >
+                {toast.message}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <section className="grid gap-4 lg:grid-cols-[7fr_3fr]">
           <div className="app-toolbar app-panel">
             <div className="flex items-center justify-between gap-2">
@@ -805,80 +889,88 @@ export default function App() {
               className="grid w-full gap-3"
               onSubmit={handleEnqueue}
             >
-              <div className="app-voice-stage">
-                <p className="app-label text-center">Develop at the speed of thought</p>
-                <p className="text-center text-sm text-[var(--app-subtle)]">
-                  Hold <kbd>Shift</kbd> + <kbd>Space</kbd> to push-to-talk or use <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> +
-                  <kbd>V</kbd> to toggle recording.
-                </p>
-                <button
-                  className={`app-mic-button app-mic-button--hero ${isRecording ? "app-mic-button--active app-mic-button--recording" : ""}`}
-                  onClick={() => {
-                    void toggleVoiceInput();
-                  }}
-                  title={isRecording ? "Stop & send voice command" : "Record voice command"}
-                  type="button"
-                  disabled={isVoiceProcessing || !voiceSupported}
-                >
-                  {isRecording ? <StopIcon className="h-9 w-9" /> : <MicrophoneIcon className="h-9 w-9" />}
-                </button>
-                {isRecording ? (
-                  <div className="app-voice-wave app-voice-wave--hero" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                ) : null}
-              </div>
               <div className="flex items-center justify-center gap-3">
-                <button
-                  className="app-theme-toggle rounded-lg px-4 py-2 text-sm font-semibold"
-                  type="button"
-                  onClick={() => setShowWriteInput((prev) => !prev)}
-                >
-                  {showWriteInput ? "Hide typing" : "Write instead"}
-                </button>
+                <label className="app-mode-switch" title="Toggle between voice and text mode">
+                  <span className={`app-mode-switch__icon ${composerMode === "voice" ? "is-active" : ""}`}>
+                    <MicrophoneIcon className="h-4 w-4" />
+                  </span>
+                  <input
+                    className="app-mode-switch__input"
+                    type="checkbox"
+                    checked={composerMode === "text"}
+                    onChange={(event) => setComposerMode(event.target.checked ? "text" : "voice")}
+                    aria-label="Toggle between voice and text mode"
+                  />
+                  <span className="app-mode-switch__track">
+                    <span className="app-mode-switch__thumb" />
+                  </span>
+                  <span className={`app-mode-switch__icon ${composerMode === "text" ? "is-active" : ""}`}>
+                    <TextModeIcon className="h-4 w-4" />
+                  </span>
+                </label>
               </div>
-              {showWriteInput ? (
-                <>
-                  <div className="app-input-stack">
-                    <textarea
-                      className="app-input rounded-lg px-4 py-3 text-base"
-                      placeholder="Optional typing mode: describe what you want built."
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          formRef.current?.requestSubmit();
-                        }
-                      }}
-                      rows={5}
-                      required
-                    />
-                  </div>
-                  <div className="flex justify-center">
+              <div className="app-composer-mode-panel">
+                {composerMode === "voice" ? (
+                  <div className="app-voice-stage">
+                    <p className="app-label text-center">Develop at the speed of thought</p>
+                    <p className="text-center text-sm text-[var(--app-subtle)]">
+                      Hold <kbd>Shift</kbd> + <kbd>Space</kbd> to push-to-talk or use <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> +
+                      <kbd>V</kbd> to toggle recording.
+                    </p>
                     <button
-                      className="app-button-primary rounded-lg px-5 py-2.5 text-sm font-semibold"
-                      type="submit"
-                      disabled={isSubmitting || isVoiceProcessing}
+                      className={`app-mic-button app-mic-button--hero ${isRecording ? "app-mic-button--active app-mic-button--recording" : ""}`}
+                      onClick={() => {
+                        void toggleVoiceInput();
+                      }}
+                      title={isRecording ? "Stop & send voice command" : "Record voice command"}
+                      type="button"
+                      disabled={isVoiceProcessing || !voiceSupported}
                     >
-                      {isSubmitting ? "Submitting..." : "Send Typed Task"}
+                      {isRecording ? <StopIcon className="h-9 w-9" /> : <MicrophoneIcon className="h-9 w-9" />}
                     </button>
+                    {isRecording ? (
+                      <div className="app-voice-wave app-voice-wave--hero" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    ) : null}
                   </div>
-                </>
-              ) : null}
-            </form>
-            {recordedAudioUrl ? (
-              <div className="app-audio-panel space-y-2">
-                <p className="text-sm font-semibold text-[var(--app-subtle)]">Last voice capture</p>
-                <VoicePromptPlayer src={recordedAudioUrl} />
+                ) : (
+                  <div className="app-text-stage">
+                    <div className="app-input-stack">
+                      <textarea
+                        className="app-input rounded-lg px-4 py-3 text-base"
+                        placeholder="Describe what you want built."
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            formRef.current?.requestSubmit();
+                          }
+                        }}
+                        rows={5}
+                        required={composerMode === "text"}
+                      />
+                    </div>
+                    <div className="mt-3 flex justify-center">
+                      <button
+                        className="app-button-primary rounded-lg px-5 py-2.5 text-sm font-semibold"
+                        type="submit"
+                        disabled={isSubmitting || isVoiceProcessing}
+                      >
+                        {isSubmitting ? "Submitting..." : "Send Typed Task"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : null}
+            </form>
             {voiceTranscript ? (
               <div className="app-transcript">
                 <p className="text-sm text-[var(--app-subtle)]">Voice transcript sent</p>
@@ -922,16 +1014,29 @@ export default function App() {
               <p className="text-[11px] text-[var(--app-subtle)]">
                 cwd: <code>{workspaceShellCwd}</code>
               </p>
-              {workspaceCommandResult ? (
-                <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
-                  <p className="text-[11px] text-[var(--app-subtle)]">
-                    Exit: {workspaceCommandResult.exit_code ?? "N/A"} {workspaceCommandResult.timed_out ? " (timed out)" : ""}
+              <div ref={workspaceTerminalHistoryRef} className="app-terminal-shell max-h-56 overflow-auto">
+                {workspaceTerminalHistory.length ? (
+                  workspaceTerminalHistory.map((entry) => (
+                    <div key={entry.id} className="app-terminal-entry">
+                      <p className="app-terminal-entry__command">
+                        <span className="app-terminal-entry__time">[{formatHistoryClock(entry.createdAt)}]</span>{" "}
+                        <span className="app-terminal-entry__cwd">({entry.workingDirectory})</span>{" "}
+                        <span className="app-terminal-entry__prompt">$</span> {entry.command}
+                      </p>
+                      {entry.stdout ? <pre className="app-terminal-entry__output">{entry.stdout}</pre> : null}
+                      {entry.stderr ? <pre className="app-terminal-entry__error">{entry.stderr}</pre> : null}
+                      <p className="app-terminal-entry__status">
+                        exit {entry.exitCode ?? "N/A"}
+                        {entry.timedOut ? " (timed out)" : ""}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-[var(--app-muted-text)]">
+                    No command history yet. Run a command to build history.
                   </p>
-                  <pre className="app-terminal-output max-h-44 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
-                    {workspaceCommandResult.stdout || workspaceCommandResult.stderr || "(no output)"}
-                  </pre>
-                </div>
-              ) : null}
+                )}
+              </div>
             </div>
           </aside>
         </section>
@@ -982,8 +1087,13 @@ export default function App() {
 
         <footer className="app-footer">
           <p>
-            Seal voice-first mode enabled. Primary action: talk to Otter. Secondary action: write with the
-            <strong> Write instead</strong> button.
+            Seal voice-first mode enabled. Switch between voice and text with the compact mode toggle.
+          </p>
+          <p>
+            Developed by{" "}
+            <a href="https://unchainedlabs.xyz" target="_blank" rel="noreferrer">
+              unchainlabs.xyz
+            </a>
           </p>
         </footer>
       </div>
@@ -1026,13 +1136,16 @@ export default function App() {
               </div>
             ) : null}
             <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[4fr_6fr]">
-              <section className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
+              <section className="flex min-h-0 flex-col rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                 <p className="mb-1 text-xs font-semibold">Result</p>
                 <pre className="app-terminal-output max-h-32 overflow-auto whitespace-pre-wrap text-[11px]">
                   {selectedJob.output?.assistant_output ?? "No final output yet."}
                 </pre>
                 <p className="mb-1 mt-2 text-xs font-semibold">Recent live build stream</p>
-                <pre className="app-terminal-output max-h-52 overflow-auto whitespace-pre-wrap text-[11px]">
+                <pre
+                  ref={resultLiveStreamRef}
+                  className="app-terminal-output min-h-0 flex-1 overflow-auto whitespace-pre-wrap text-[11px]"
+                >
                   {selectedLiveOutput.length ? selectedLiveOutput.slice(-120).join("\n") : "No live chunks yet."}
                 </pre>
                 <p className="mt-2 text-xs text-[var(--app-muted-text)]">
@@ -1114,7 +1227,7 @@ export default function App() {
                     </div>
                     <div className="min-h-0 flex-1 rounded border border-[var(--app-muted-border)] bg-[var(--app-card)] p-2">
                       <p className="mb-1 text-xs font-semibold text-[var(--app-subtle)]">Workspace shell history</p>
-                      <div className="app-terminal-shell h-full overflow-auto">
+                      <div ref={modalTerminalHistoryRef} className="app-terminal-shell h-full overflow-auto">
                         {selectedTerminalHistory.length ? (
                           selectedTerminalHistory.map((entry) => (
                             <div key={entry.id} className="app-terminal-entry">
