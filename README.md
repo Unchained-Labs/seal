@@ -51,6 +51,7 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - custom voice player component for recorded prompts (single control set)
   - icon-based tabbed preview panel (`Workspace Shell` / `Browser`) with fullscreen toggle
   - workspace shell sessions keep current working directory across commands
+  - completion toast notifications when jobs finish
 
 ## Data Sources
 
