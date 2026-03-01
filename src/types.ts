@@ -38,6 +38,15 @@ export interface QueueItem {
   created_at: string;
 }
 
+export interface HistoryItem {
+  job_id: string;
+  workspace_id: string;
+  prompt: string;
+  status: JobStatus;
+  assistant_output: string | null;
+  created_at: string;
+}
+
 export interface Workspace {
   id: string;
   project_id: string;
