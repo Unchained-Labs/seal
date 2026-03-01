@@ -18,6 +18,7 @@ import {
   MicrophoneIcon,
   StopIcon,
   TerminalIcon,
+  TextModeIcon,
   ThemeDarkIcon,
   ThemeLightIcon
 } from "./components/icons";
@@ -265,7 +266,6 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
-  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [voiceAudioByJob, setVoiceAudioByJob] = useState<Record<string, string>>({});
   const [playingVoiceJobId, setPlayingVoiceJobId] = useState<string | null>(null);
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
@@ -286,7 +286,7 @@ export default function App() {
     Record<string, TerminalHistoryEntry[]>
   >({});
   const [draggedTodoJobId, setDraggedTodoJobId] = useState<string | null>(null);
-  const [showWriteInput, setShowWriteInput] = useState(false);
+  const [composerMode, setComposerMode] = useState<"voice" | "text">("voice");
   const [toasts, setToasts] = useState<UiToast[]>([]);
   const formRef = useRef<HTMLFormElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -528,7 +528,6 @@ export default function App() {
         return;
       }
       const dataUrl = await blobToDataUrl(audioBlob);
-      setRecordedAudioUrl(dataUrl);
       setIsVoiceProcessing(true);
       setSubmitFeedback("Transcribing voice command...");
       setError(null);
@@ -890,80 +889,88 @@ export default function App() {
               className="grid w-full gap-3"
               onSubmit={handleEnqueue}
             >
-              <div className="app-voice-stage">
-                <p className="app-label text-center">Develop at the speed of thought</p>
-                <p className="text-center text-sm text-[var(--app-subtle)]">
-                  Hold <kbd>Shift</kbd> + <kbd>Space</kbd> to push-to-talk or use <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> +
-                  <kbd>V</kbd> to toggle recording.
-                </p>
-                <button
-                  className={`app-mic-button app-mic-button--hero ${isRecording ? "app-mic-button--active app-mic-button--recording" : ""}`}
-                  onClick={() => {
-                    void toggleVoiceInput();
-                  }}
-                  title={isRecording ? "Stop & send voice command" : "Record voice command"}
-                  type="button"
-                  disabled={isVoiceProcessing || !voiceSupported}
-                >
-                  {isRecording ? <StopIcon className="h-9 w-9" /> : <MicrophoneIcon className="h-9 w-9" />}
-                </button>
-                {isRecording ? (
-                  <div className="app-voice-wave app-voice-wave--hero" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                ) : null}
-              </div>
               <div className="flex items-center justify-center gap-3">
-                <button
-                  className="app-theme-toggle rounded-lg px-4 py-2 text-sm font-semibold"
-                  type="button"
-                  onClick={() => setShowWriteInput((prev) => !prev)}
-                >
-                  {showWriteInput ? "Hide typing" : "Write instead"}
-                </button>
+                <label className="app-mode-switch" title="Toggle between voice and text mode">
+                  <span className={`app-mode-switch__icon ${composerMode === "voice" ? "is-active" : ""}`}>
+                    <MicrophoneIcon className="h-4 w-4" />
+                  </span>
+                  <input
+                    className="app-mode-switch__input"
+                    type="checkbox"
+                    checked={composerMode === "text"}
+                    onChange={(event) => setComposerMode(event.target.checked ? "text" : "voice")}
+                    aria-label="Toggle between voice and text mode"
+                  />
+                  <span className="app-mode-switch__track">
+                    <span className="app-mode-switch__thumb" />
+                  </span>
+                  <span className={`app-mode-switch__icon ${composerMode === "text" ? "is-active" : ""}`}>
+                    <TextModeIcon className="h-4 w-4" />
+                  </span>
+                </label>
               </div>
-              {showWriteInput ? (
-                <>
-                  <div className="app-input-stack">
-                    <textarea
-                      className="app-input rounded-lg px-4 py-3 text-base"
-                      placeholder="Optional typing mode: describe what you want built."
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          formRef.current?.requestSubmit();
-                        }
-                      }}
-                      rows={5}
-                      required
-                    />
-                  </div>
-                  <div className="flex justify-center">
+              <div className="app-composer-mode-panel">
+                {composerMode === "voice" ? (
+                  <div className="app-voice-stage">
+                    <p className="app-label text-center">Develop at the speed of thought</p>
+                    <p className="text-center text-sm text-[var(--app-subtle)]">
+                      Hold <kbd>Shift</kbd> + <kbd>Space</kbd> to push-to-talk or use <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> +
+                      <kbd>V</kbd> to toggle recording.
+                    </p>
                     <button
-                      className="app-button-primary rounded-lg px-5 py-2.5 text-sm font-semibold"
-                      type="submit"
-                      disabled={isSubmitting || isVoiceProcessing}
+                      className={`app-mic-button app-mic-button--hero ${isRecording ? "app-mic-button--active app-mic-button--recording" : ""}`}
+                      onClick={() => {
+                        void toggleVoiceInput();
+                      }}
+                      title={isRecording ? "Stop & send voice command" : "Record voice command"}
+                      type="button"
+                      disabled={isVoiceProcessing || !voiceSupported}
                     >
-                      {isSubmitting ? "Submitting..." : "Send Typed Task"}
+                      {isRecording ? <StopIcon className="h-9 w-9" /> : <MicrophoneIcon className="h-9 w-9" />}
                     </button>
+                    {isRecording ? (
+                      <div className="app-voice-wave app-voice-wave--hero" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    ) : null}
                   </div>
-                </>
-              ) : null}
-            </form>
-            {recordedAudioUrl ? (
-              <div className="app-audio-panel space-y-2">
-                <p className="text-sm font-semibold text-[var(--app-subtle)]">Last voice capture</p>
-                <VoicePromptPlayer src={recordedAudioUrl} />
+                ) : (
+                  <div className="app-text-stage">
+                    <div className="app-input-stack">
+                      <textarea
+                        className="app-input rounded-lg px-4 py-3 text-base"
+                        placeholder="Describe what you want built."
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            formRef.current?.requestSubmit();
+                          }
+                        }}
+                        rows={5}
+                        required={composerMode === "text"}
+                      />
+                    </div>
+                    <div className="mt-3 flex justify-center">
+                      <button
+                        className="app-button-primary rounded-lg px-5 py-2.5 text-sm font-semibold"
+                        type="submit"
+                        disabled={isSubmitting || isVoiceProcessing}
+                      >
+                        {isSubmitting ? "Submitting..." : "Send Typed Task"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : null}
+            </form>
             {voiceTranscript ? (
               <div className="app-transcript">
                 <p className="text-sm text-[var(--app-subtle)]">Voice transcript sent</p>
@@ -1080,8 +1087,7 @@ export default function App() {
 
         <footer className="app-footer">
           <p>
-            Seal voice-first mode enabled. Primary action: talk to Otter. Secondary action: write with the
-            <strong> Write instead</strong> button.
+            Seal voice-first mode enabled. Switch between voice and text with the compact mode toggle.
           </p>
           <p>
             Developed by{" "}
