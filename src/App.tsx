@@ -1,33 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   cancelJob,
   checkBackendHealth,
   enqueuePrompt,
   enqueueVoicePrompt,
   getJob,
-  getWorkspaceFile,
-  getWorkspaceTree,
   listHistory,
-  listProjects,
   listQueue,
   runWorkspaceCommand,
-  listWorkspaces,
   updateQueuePriority
 } from "./api/otter";
 import { KanbanBoard } from "./components/KanbanBoard";
-import { MicrophoneIcon, PulseIcon, StopIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
+import { MicrophoneIcon, StopIcon, ThemeDarkIcon, ThemeLightIcon } from "./components/icons";
+import { VoicePromptPlayer } from "./components/VoicePromptPlayer";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
 import type {
   HistoryItem,
   JobResponse,
-  Project,
   QueueItem,
-  Workspace,
-  WorkspaceCommandResponse,
-  WorkspaceFileResponse,
-  WorkspaceTreeResponse
+  WorkspaceCommandResponse
 } from "./types";
 type BackendHealth = "checking" | "online" | "offline";
 const JOB_CACHE_KEY = "seal-job-cache-v1";
@@ -95,14 +86,11 @@ function detectFirstUrl(input: string): string | null {
   return match?.[0] ?? null;
 }
 
-function isMarkdownLikeFile(path: string): boolean {
-  const lower = path.toLowerCase();
-  return (
-    lower.endsWith(".md") ||
-    lower.endsWith(".markdown") ||
-    lower.endsWith(".mdx") ||
-    lower.endsWith("readme")
-  );
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
 }
 
 export default function App() {
@@ -120,11 +108,6 @@ export default function App() {
   const [voiceAudioByJob, setVoiceAudioByJob] = useState<Record<string, string>>({});
   const [playingVoiceJobId, setPlayingVoiceJobId] = useState<string | null>(null);
   const [backendHealth, setBackendHealth] = useState<BackendHealth>("checking");
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
-  const [workspaceTree, setWorkspaceTree] = useState<WorkspaceTreeResponse | null>(null);
-  const [selectedFile, setSelectedFile] = useState<WorkspaceFileResponse | null>(null);
   const [workspaceCommand, setWorkspaceCommand] = useState("ls -la");
   const [workspaceCommandResult, setWorkspaceCommandResult] = useState<WorkspaceCommandResponse | null>(null);
   const [workspaceCommandRunning, setWorkspaceCommandRunning] = useState(false);
@@ -135,11 +118,13 @@ export default function App() {
   const [modalCommandRunning, setModalCommandRunning] = useState(false);
   const [modalCommandResult, setModalCommandResult] = useState<WorkspaceCommandResponse | null>(null);
   const [draggedTodoJobId, setDraggedTodoJobId] = useState<string | null>(null);
+  const [showWriteInput, setShowWriteInput] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const healthCheckInFlightRef = useRef(false);
+  const pushToTalkActiveRef = useRef(false);
   const voiceSupported =
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices &&
@@ -176,7 +161,8 @@ export default function App() {
       })
     );
     const entries = mapped.filter((entry): entry is readonly [string, JobResponse] => entry !== null);
-    setJobs((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    // Replace cache with backend truth so fresh DB runs don't keep stale local jobs.
+    setJobs(Object.fromEntries(entries));
     setBackendHealth("online");
     setError(null);
     setSubmitFeedback((prev) => (prev?.includes("Queued") ? prev : null));
@@ -238,22 +224,6 @@ export default function App() {
       window.clearInterval(interval);
     };
   }, [refreshJobs]);
-
-  useEffect(() => {
-    const refreshMetadata = async () => {
-      const [projectsResult, workspacesResult] = await Promise.allSettled([
-        listProjects(),
-        listWorkspaces()
-      ]);
-      if (projectsResult.status === "fulfilled") {
-        setProjects(projectsResult.value);
-      }
-      if (workspacesResult.status === "fulfilled") {
-        setWorkspaces(workspacesResult.value);
-      }
-    };
-    void refreshMetadata();
-  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -324,7 +294,6 @@ export default function App() {
     setIsSubmitting(true);
     try {
       const job = await enqueuePrompt({
-        workspace_id: selectedWorkspaceId || undefined,
         prompt
       });
       setPrompt("");
@@ -359,34 +328,6 @@ export default function App() {
     }
   };
 
-  const handleSelectWorkspace = async (workspaceId: string) => {
-    setSelectedWorkspaceId(workspaceId);
-    if (!workspaceId) {
-      setWorkspaceTree(null);
-      setSelectedFile(null);
-      return;
-    }
-    try {
-      const tree = await getWorkspaceTree(workspaceId, "", 2);
-      setWorkspaceTree(tree);
-      setSelectedFile(null);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  };
-
-  const handleOpenFile = async (relativePath: string) => {
-    if (!selectedWorkspaceId) {
-      return;
-    }
-    try {
-      const file = await getWorkspaceFile(selectedWorkspaceId, relativePath);
-      setSelectedFile(file);
-    } catch (err: unknown) {
-      setError(String(err));
-    }
-  };
-
   const handleVoiceBlob = useCallback(
     async (audioBlob: Blob) => {
       if (!audioBlob.size) {
@@ -400,7 +341,7 @@ export default function App() {
       setError(null);
       try {
         const response = await enqueueVoicePrompt(audioBlob, {
-          workspace_id: selectedWorkspaceId || undefined
+          workspace_id: undefined
         });
         setVoiceTranscript(response.transcript);
         setPrompt(response.transcript);
@@ -423,7 +364,7 @@ export default function App() {
         setIsVoiceProcessing(false);
       }
     },
-    [refreshJobs, selectedWorkspaceId]
+    [refreshJobs]
   );
 
   const handleRunWorkspaceCommand = async () => {
@@ -433,8 +374,8 @@ export default function App() {
     setWorkspaceCommandRunning(true);
     setError(null);
     try {
-      const result = await runWorkspaceCommand(selectedWorkspaceId || undefined, {
-        workspace_id: selectedWorkspaceId || undefined,
+      const result = await runWorkspaceCommand(undefined, {
+        workspace_id: undefined,
         command: workspaceCommand,
         timeout_seconds: 120
       });
@@ -454,26 +395,13 @@ export default function App() {
         .sort((a, b) => (a.queue_rank ?? Number.MAX_SAFE_INTEGER) - (b.queue_rank ?? Number.MAX_SAFE_INTEGER)),
     [jobList]
   );
-  const stats = useMemo(
-    () => ({
-      total: jobList.length,
-      queued: jobList.filter((item) => item.job.status === "queued").length,
-      running: jobList.filter((item) => item.job.status === "running").length,
-      done: jobList.filter((item) => item.job.status === "succeeded" || item.job.status === "cancelled").length,
-      blocked: jobList.filter((item) => item.job.status === "failed").length
-    }),
-    [jobList]
-  );
-
-  const toggleVoiceInput = async () => {
+  const startVoiceRecording = useCallback(async () => {
     setError(null);
     if (!voiceSupported) {
       setError("Voice recording is not supported by this browser.");
       return;
     }
-    if (isRecording) {
-      mediaRecorderRef.current?.stop();
-      setIsRecording(false);
+    if (isRecording || isVoiceProcessing) {
       return;
     }
     try {
@@ -493,12 +421,79 @@ export default function App() {
       recorder.start();
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
-      setSubmitFeedback("Recording... tap mic again to send voice command.");
+      setSubmitFeedback("Recording... release Shift+Space (or click mic) to send voice command.");
     } catch {
       setError("Unable to start microphone recording.");
       setIsRecording(false);
     }
+  }, [handleVoiceBlob, isRecording, isVoiceProcessing, voiceSupported]);
+
+  const stopVoiceRecording = useCallback(() => {
+    if (!isRecording) {
+      return;
+    }
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  }, [isRecording]);
+
+  const toggleVoiceInput = async () => {
+    if (isRecording) {
+      stopVoiceRecording();
+      return;
+    }
+    await startVoiceRecording();
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+      const isPushToTalk = event.shiftKey && event.code === "Space";
+      const isToggleShortcut =
+        (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "v";
+      if (isPushToTalk) {
+        event.preventDefault();
+        if (!pushToTalkActiveRef.current) {
+          pushToTalkActiveRef.current = true;
+          void startVoiceRecording();
+        }
+        return;
+      }
+      if (isToggleShortcut) {
+        event.preventDefault();
+        if (isRecording) {
+          stopVoiceRecording();
+        } else {
+          void startVoiceRecording();
+        }
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      const isPushToTalkRelease = event.code === "Space" && pushToTalkActiveRef.current;
+      if (!isPushToTalkRelease) {
+        return;
+      }
+      event.preventDefault();
+      pushToTalkActiveRef.current = false;
+      stopVoiceRecording();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [isRecording, startVoiceRecording, stopVoiceRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (isRecording) {
+        mediaRecorderRef.current?.stop();
+      }
+    };
+  }, [isRecording]);
 
   const handleTodoDropOnTarget = async (targetJobId: string) => {
     if (!draggedTodoJobId || draggedTodoJobId === targetJobId) {
@@ -546,14 +541,8 @@ export default function App() {
     const live = selectedLiveOutput.join("\n");
     return detectFirstUrl(`${output}\n${live}`) ?? "";
   }, [selectedJob, selectedLiveOutput]);
-  const workspaceNameById = useMemo(
-    () => new Map(workspaces.map((workspace) => [workspace.id, workspace.name])),
-    [workspaces]
-  );
-  const selectedWorkspaceLabel = selectedWorkspaceId ? "Selected workspace" : "Auto workspace (default)";
-
   const handleRunTaskTerminalCommand = async () => {
-    const workspaceId = selectedJob?.job.workspace_id || selectedWorkspaceId || undefined;
+    const workspaceId = selectedJob?.job.workspace_id || undefined;
     if (!modalCommand.trim()) {
       return;
     }
@@ -602,190 +591,127 @@ export default function App() {
   return (
     <main className="app-root min-h-screen px-4 py-4 sm:px-6">
       <div className="app-shell mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-[1800px] flex-col gap-4 p-4 sm:p-6">
-        <header className="app-header">
-          <div className="space-y-1">
-            <p className="app-label">Seal</p>
-            <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-[var(--app-heading)] sm:text-3xl">
-              <PulseIcon className="h-6 w-6 text-[var(--app-accent)]" />
-              Voice Ops Board
-            </h1>
-            <p className="text-sm text-[var(--app-subtle)]">
-              Minimal control surface for voice-first Otter orchestration.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className={`app-health-indicator app-health-indicator--${backendHealth}`}
-              data-tooltip={`Backend: ${backendHealth}`}
-              aria-label={`Backend: ${backendHealth}`}
-            />
-            <button
-              className="app-theme-toggle rounded-lg px-3 py-2 text-xs font-semibold"
-              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-              type="button"
-            >
-              {theme === "dark" ? (
-                <>
-                  <ThemeLightIcon className="h-5 w-5" />
-                  Light
-                </>
-              ) : (
-                <>
-                  <ThemeDarkIcon className="h-5 w-5" />
-                  Dark
-                </>
-              )}
-            </button>
-          </div>
-        </header>
-
-        <section className="app-toolbar app-panel mx-auto w-full max-w-5xl">
-          <form
-            ref={formRef}
-            className="grid w-full gap-3"
-            onSubmit={handleEnqueue}
-          >
-            <div className="app-input-stack">
-              <textarea
-                className="app-input rounded-lg px-5 py-4 text-lg"
-                placeholder="Describe what you want built. Voice-first: record command, then refine text here if needed."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    formRef.current?.requestSubmit();
-                  }
-                }}
-                rows={7}
-                required
-              />
-              {voiceSupported ? (
+        <section className="grid gap-4 lg:grid-cols-[7fr_3fr]">
+          <div className="app-toolbar app-panel">
+            <div className="flex items-center justify-between gap-2">
+              <p className="app-label">Seal</p>
+              <div className="flex items-center gap-2">
+                <div
+                  className={`app-health-indicator app-health-indicator--${backendHealth}`}
+                  data-tooltip={`Backend: ${backendHealth}`}
+                  aria-label={`Backend: ${backendHealth}`}
+                />
                 <button
-                  className={`app-mic-button ${isRecording ? "app-mic-button--active app-mic-button--recording" : ""}`}
-                  onClick={toggleVoiceInput}
+                  className="app-theme-toggle rounded-lg px-3 py-2 text-xs font-semibold"
+                  onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+                  type="button"
+                >
+                  {theme === "dark" ? (
+                    <>
+                      <ThemeLightIcon className="h-5 w-5" />
+                      Light
+                    </>
+                  ) : (
+                    <>
+                      <ThemeDarkIcon className="h-5 w-5" />
+                      Dark
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+            <form
+              ref={formRef}
+              className="grid w-full gap-3"
+              onSubmit={handleEnqueue}
+            >
+              <div className="app-voice-stage">
+                <p className="app-label text-center">Develop at the speed of thought</p>
+                <p className="text-center text-sm text-[var(--app-subtle)]">
+                  Hold <kbd>Shift</kbd> + <kbd>Space</kbd> to push-to-talk or use <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> +
+                  <kbd>V</kbd> to toggle recording.
+                </p>
+                <button
+                  className={`app-mic-button app-mic-button--hero ${isRecording ? "app-mic-button--active app-mic-button--recording" : ""}`}
+                  onClick={() => {
+                    void toggleVoiceInput();
+                  }}
                   title={isRecording ? "Stop & send voice command" : "Record voice command"}
                   type="button"
-                  disabled={isVoiceProcessing}
+                  disabled={isVoiceProcessing || !voiceSupported}
                 >
-                  {isRecording ? <StopIcon className="h-6 w-6" /> : <MicrophoneIcon className="h-6 w-6" />}
+                  {isRecording ? <StopIcon className="h-9 w-9" /> : <MicrophoneIcon className="h-9 w-9" />}
                 </button>
+                {isRecording ? (
+                  <div className="app-voice-wave app-voice-wave--hero" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  className="app-theme-toggle rounded-lg px-4 py-2 text-sm font-semibold"
+                  type="button"
+                  onClick={() => setShowWriteInput((prev) => !prev)}
+                >
+                  {showWriteInput ? "Hide typing" : "Write instead"}
+                </button>
+              </div>
+              {showWriteInput ? (
+                <>
+                  <div className="app-input-stack">
+                    <textarea
+                      className="app-input rounded-lg px-4 py-3 text-base"
+                      placeholder="Optional typing mode: describe what you want built."
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          formRef.current?.requestSubmit();
+                        }
+                      }}
+                      rows={5}
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-center">
+                    <button
+                      className="app-button-primary rounded-lg px-5 py-2.5 text-sm font-semibold"
+                      type="submit"
+                      disabled={isSubmitting || isVoiceProcessing}
+                    >
+                      {isSubmitting ? "Submitting..." : "Send Typed Task"}
+                    </button>
+                  </div>
+                </>
               ) : null}
-            </div>
-            {isRecording ? (
-              <div className="app-voice-wave" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
+            </form>
+            {recordedAudioUrl ? (
+              <div className="app-audio-panel space-y-2">
+                <p className="text-sm font-semibold text-[var(--app-subtle)]">Last voice capture</p>
+                <VoicePromptPlayer src={recordedAudioUrl} />
               </div>
             ) : null}
-            <div className="flex items-center justify-center gap-3">
-              <button
-                className="app-button-primary rounded-lg px-4 py-2 text-sm font-semibold"
-                type="submit"
-                disabled={isSubmitting || isVoiceProcessing}
-              >
-                {isSubmitting ? "Submitting..." : "Add Task"}
-              </button>
-              <span className="text-xs text-[var(--app-subtle)]">{selectedWorkspaceLabel}</span>
-            </div>
-            <select
-              className="app-input mx-auto w-full max-w-3xl rounded-lg px-3 py-2 text-sm"
-              value={selectedWorkspaceId}
-              onChange={(event) => {
-                void handleSelectWorkspace(event.target.value);
-              }}
-            >
-              <option value="">Auto workspace (server default)</option>
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.name} — {workspace.root_path}
-                </option>
-              ))}
-            </select>
-          </form>
-          {recordedAudioUrl ? (
-            <div className="space-y-1">
-              <p className="text-xs text-[var(--app-subtle)]">Last voice capture</p>
-              <audio controls src={recordedAudioUrl} className="app-audio-player" />
-            </div>
-          ) : null}
-          {voiceTranscript ? (
-            <p className="text-xs text-[var(--app-subtle)]">
-              Voice transcript: <span className="text-[var(--app-text)]">{voiceTranscript}</span>
-            </p>
-          ) : null}
-          {submitFeedback ? (
-            <p className="text-sm text-[var(--app-subtle)]">{submitFeedback}</p>
-          ) : null}
-          <div className="app-stats-grid">
-            <div className="app-stat"><span>Total</span><strong>{stats.total}</strong></div>
-            <div className="app-stat"><span>Todo</span><strong>{stats.queued}</strong></div>
-            <div className="app-stat"><span>Running</span><strong>{stats.running}</strong></div>
-            <div className="app-stat"><span>Done</span><strong>{stats.done}</strong></div>
-            <div className="app-stat"><span>Blocked</span><strong>{stats.blocked}</strong></div>
+            {voiceTranscript ? (
+              <div className="app-transcript">
+                <p className="text-sm text-[var(--app-subtle)]">Voice transcript sent</p>
+                <p className="text-base text-[var(--app-text)]">{voiceTranscript}</p>
+              </div>
+            ) : null}
+            {submitFeedback ? (
+              <p className="text-base text-[var(--app-subtle)]">{submitFeedback}</p>
+            ) : null}
           </div>
-        </section>
 
-        {error ? (
-          <div className="rounded-lg border border-red-700 bg-red-950/30 p-3 text-sm text-red-300">{error}</div>
-        ) : null}
-
-        <div className="grid flex-1 gap-4 xl:grid-cols-[360px_1fr]">
-          <aside className="app-panel flex min-h-[22rem] flex-col gap-3 p-3">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--app-subtle)]">Projects</h2>
-            <div className="flex max-h-32 flex-col gap-2 overflow-auto">
-              {projects.length === 0 ? (
-                <p className="text-xs text-[var(--app-muted-text)]">No projects</p>
-              ) : (
-                projects.map((project) => (
-                  <div key={project.id} className="rounded border border-[var(--app-muted-border)] p-2 text-xs">
-                    <p className="font-semibold text-[var(--app-heading)]">{project.name}</p>
-                    {project.description ? <p className="text-[var(--app-subtle)]">{project.description}</p> : null}
-                  </div>
-                ))
-              )}
-            </div>
-            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--app-subtle)]">Workspace files</h2>
-            <div className="flex max-h-40 flex-col gap-2 overflow-auto">
-              {workspaceTree?.entries?.length ? (
-                workspaceTree.entries.map((entry) => (
-                  <button
-                    key={entry.relative_path}
-                    className="rounded border border-[var(--app-muted-border)] px-2 py-1 text-left text-xs"
-                    onClick={() => {
-                      if (entry.kind === "file") {
-                        void handleOpenFile(entry.relative_path);
-                      }
-                    }}
-                    type="button"
-                  >
-                    <span className="font-semibold">{entry.kind === "directory" ? "DIR" : "FILE"}</span> {entry.relative_path}
-                  </button>
-                ))
-              ) : (
-                <p className="text-xs text-[var(--app-muted-text)]">Select a workspace to browse files.</p>
-              )}
-            </div>
-            {selectedFile ? (
-              <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
-                <p className="mb-1 text-xs font-semibold text-[var(--app-heading)]">{selectedFile.relative_path}</p>
-                {isMarkdownLikeFile(selectedFile.relative_path) ? (
-                  <div className="app-markdown max-h-64 overflow-auto text-xs">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {selectedFile.content}
-                    </ReactMarkdown>
-                  </div>
-                ) : (
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-[var(--app-text)]">
-                    {selectedFile.content}
-                  </pre>
-                )}
-              </div>
-            ) : null}
-            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--app-subtle)]">Workspace shell</h2>
+          <aside className="app-panel flex min-h-[18rem] flex-col gap-3 p-3">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--app-subtle)]">Workspace terminal</h2>
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
                 <input
@@ -812,9 +738,7 @@ export default function App() {
                   {workspaceCommandRunning ? "Running..." : "Run"}
                 </button>
               </div>
-              <p className="text-xs text-[var(--app-muted-text)]">
-                Runs in {selectedWorkspaceId ? "selected workspace" : "auto workspace"}.
-              </p>
+              <p className="text-xs text-[var(--app-muted-text)]">Runs in the default auto workspace.</p>
               {workspaceCommandResult ? (
                 <div className="rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] p-2">
                   <p className="text-[11px] text-[var(--app-subtle)]">
@@ -827,40 +751,51 @@ export default function App() {
               ) : null}
             </div>
           </aside>
+        </section>
 
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <KanbanBoard
-              jobs={jobList}
-              onCancel={handleCancel}
-              onOpen={setSelectedJobId}
-              hasVoiceForJob={(jobId) => Boolean(voiceAudioByJob[jobId])}
-              isVoicePlayingForJob={(jobId) => playingVoiceJobId === jobId}
-              onToggleVoice={(jobId) => {
-                void handleToggleVoicePlayback(jobId);
+        {error ? (
+          <div className="rounded-lg border border-red-700 bg-red-950/30 p-3 text-sm text-red-300">{error}</div>
+        ) : null}
+
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <KanbanBoard
+            jobs={jobList}
+            onCancel={handleCancel}
+            onOpen={setSelectedJobId}
+            hasVoiceForJob={(jobId) => Boolean(voiceAudioByJob[jobId])}
+            isVoicePlayingForJob={(jobId) => playingVoiceJobId === jobId}
+            onToggleVoice={(jobId) => {
+              void handleToggleVoicePlayback(jobId);
+            }}
+            onTodoDragStart={setDraggedTodoJobId}
+            onReorderTodo={(target) => {
+              void handleTodoDropOnTarget(target);
+            }}
+          />
+          {Object.entries(voiceAudioByJob).map(([jobId, src]) => (
+            <audio
+              key={jobId}
+              ref={(element) => setJobAudioRef(jobId, element)}
+              src={src}
+              onPlay={() => setPlayingVoiceJobId(jobId)}
+              onPause={() => {
+                setPlayingVoiceJobId((current) => (current === jobId ? null : current));
               }}
-              onTodoDragStart={setDraggedTodoJobId}
-              onReorderTodo={(target) => {
-                void handleTodoDropOnTarget(target);
+              onEnded={() => {
+                setPlayingVoiceJobId((current) => (current === jobId ? null : current));
               }}
+              preload="metadata"
+              className="hidden"
             />
-            {Object.entries(voiceAudioByJob).map(([jobId, src]) => (
-              <audio
-                key={jobId}
-                ref={(element) => setJobAudioRef(jobId, element)}
-                src={src}
-                onPlay={() => setPlayingVoiceJobId(jobId)}
-                onPause={() => {
-                  setPlayingVoiceJobId((current) => (current === jobId ? null : current));
-                }}
-                onEnded={() => {
-                  setPlayingVoiceJobId((current) => (current === jobId ? null : current));
-                }}
-                preload="metadata"
-                className="hidden"
-              />
-            ))}
-          </div>
+          ))}
         </div>
+
+        <footer className="app-footer">
+          <p>
+            Seal voice-first mode enabled. Primary action: talk to Otter. Secondary action: write with the
+            <strong> Write instead</strong> button.
+          </p>
+        </footer>
       </div>
 
       {selectedJob ? (
@@ -892,7 +827,7 @@ export default function App() {
               </div>
             </div>
             <p className="text-xs text-[var(--app-subtle)]">
-              Status: {selectedJob.job.status} • Workspace: {workspaceNameById.get(selectedJob.job.workspace_id) ?? selectedJob.job.workspace_id}
+              Status: {selectedJob.job.status} • Workspace: {selectedJob.job.workspace_id || "auto"}
             </p>
             {voiceAudioByJob[selectedJob.job.id] ? (
               <div className="app-audio-panel">
