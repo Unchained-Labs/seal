@@ -49,6 +49,7 @@ This avoids CORS and host mismatch issues between browser, Docker, and local CLI
   - full live output panel with normalized stream formatting
   - result panel
   - custom voice player component for recorded prompts (single control set)
+  - tabbed preview panel (`Terminal` / `Browser`) with fullscreen toggle
 
 ## Data Sources
 
