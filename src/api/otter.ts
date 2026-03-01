@@ -9,7 +9,18 @@ import type {
   WorkspaceTreeResponse
 } from "../types";
 
-const OTTER_URL = import.meta.env.VITE_OTTER_URL ?? "http://localhost:8080";
+function resolveOtterUrl(): string {
+  const configured = import.meta.env.VITE_OTTER_URL?.trim();
+  if (configured) {
+    return configured;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8080`;
+  }
+  return "http://localhost:8080";
+}
+
+const OTTER_URL = resolveOtterUrl();
 const SEAL_DEBUG = import.meta.env.DEV || import.meta.env.VITE_SEAL_DEBUG === "1";
 
 function logApi(message: string, extra?: Record<string, unknown>) {
