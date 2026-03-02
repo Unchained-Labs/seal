@@ -5,6 +5,15 @@ export default defineConfig({
   description: 'Voice-first frontend documentation',
   lastUpdated: true,
   cleanUrls: true,
+  vite: {
+    // Keep docs build self-contained on Vercel and avoid inheriting parent
+    // PostCSS/Tailwind config from the application repository.
+    css: {
+      postcss: {
+        plugins: []
+      }
+    }
+  },
   themeConfig: {
     search: {
       provider: 'local'
