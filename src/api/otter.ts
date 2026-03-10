@@ -172,7 +172,7 @@ export async function enqueuePrompt(payload: EnqueuePromptRequest): Promise<JobR
 
 export async function enqueueVoicePrompt(
   audioBlob: Blob,
-  options?: { workspace_id?: string; language?: string; provider?: string }
+  options?: { workspace_id?: string; language?: string; provider?: string; dependency_job_ids?: string[] }
 ): Promise<VoiceEnqueueResponse> {
   const form = new FormData();
   form.append("file", audioBlob, "voice-command.webm");
@@ -184,6 +184,11 @@ export async function enqueueVoicePrompt(
   }
   if (options?.provider) {
     form.append("provider", options.provider);
+  }
+  if (options?.dependency_job_ids?.length) {
+    for (const dependencyJobId of options.dependency_job_ids) {
+      form.append("dependency_job_id", dependencyJobId);
+    }
   }
 
   const startedAt = performance.now();

@@ -47,6 +47,7 @@ export function KanbanCard({
   liveOutputPreview
 }: KanbanCardProps) {
   const { job, queue_rank } = item;
+  const dependencyCount = item.dependency_job_ids.length;
   const createdAtLabel = formatCreatedAt(job.created_at);
   const createdMs = Date.parse(job.created_at);
   const updatedMs = Date.parse(job.updated_at);
@@ -132,6 +133,13 @@ export function KanbanCard({
       </div>
       {statusMeta.durationLabel ? (
         <p className="mt-1 text-[11px] text-[var(--app-subtle)]">{statusMeta.durationLabel}</p>
+      ) : null}
+      {dependencyCount > 0 ? (
+        <div className="mt-1">
+          <p className="text-[11px] text-[var(--app-subtle)]">
+            Dependencies ({dependencyCount}): {item.dependency_job_ids.map((id) => id.slice(0, 8)).join(", ")}
+          </p>
+        </div>
       ) : null}
       {liveOutputPreview ? (
         <p className="mt-1 rounded border border-[var(--app-muted-border)] bg-[var(--app-result-bg)] px-2 py-1 font-mono text-[11px] text-[var(--app-subtle)] line-clamp-2">

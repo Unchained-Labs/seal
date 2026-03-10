@@ -14,7 +14,6 @@ import {
   restartRuntimeContainer,
   resumeJob,
   runWorkspaceCommand,
-  setJobDependencies,
   setJobRuntimeLaunchConfig,
   startJobRuntimeLaunch,
   startRuntimeContainer,
@@ -87,7 +86,8 @@ function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null)
       updated_at: new Date().toISOString()
     },
     output: null,
-    queue_rank: rank
+    queue_rank: rank,
+    dependency_job_ids: []
   };
 }
 
@@ -121,7 +121,8 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
           created_at: item.created_at
         }
       : null,
-    queue_rank: null
+    queue_rank: null,
+    dependency_job_ids: []
   };
 }
 
@@ -311,6 +312,7 @@ export default function App() {
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
   const [selectedDependencyJobIds, setSelectedDependencyJobIds] = useState<string[]>([]);
+  const [jobsHydratedFromBackend, setJobsHydratedFromBackend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -402,6 +404,7 @@ export default function App() {
     }
     // Replace cache with backend truth so fresh DB runs don't keep stale local jobs.
     setJobs(Object.fromEntries(entries));
+    setJobsHydratedFromBackend(true);
     setBackendHealth("online");
     setError(null);
     setSubmitFeedback((prev) => (prev?.includes("Queued") ? prev : null));
@@ -562,7 +565,8 @@ export default function App() {
         [job.id]: {
           job,
           output: null,
-          queue_rank: null
+          queue_rank: null,
+          dependency_job_ids: selectedDependencyJobIds
         }
       }));
       await refreshJobs();
@@ -612,11 +616,9 @@ export default function App() {
       setError(null);
       try {
         const response = await enqueueVoicePrompt(audioBlob, {
-          workspace_id: undefined
+          workspace_id: undefined,
+          dependency_job_ids: selectedDependencyJobIds.length ? selectedDependencyJobIds : undefined
         });
-        if (selectedDependencyJobIds.length > 0) {
-          await setJobDependencies(response.job.id, selectedDependencyJobIds);
-        }
         setVoiceTranscript(response.transcript);
         setPrompt(response.transcript);
         setSelectedDependencyJobIds([]);
@@ -627,7 +629,8 @@ export default function App() {
           [response.job.id]: {
             job: response.job,
             output: null,
-            queue_rank: null
+            queue_rank: null,
+            dependency_job_ids: selectedDependencyJobIds
           }
         }));
         await refreshJobs();
@@ -1240,7 +1243,11 @@ export default function App() {
                   </span>
                 </div>
                 {dependencyCandidates.length === 0 ? (
-                  <p className="text-xs text-[var(--app-muted-text)]">No available jobs in database yet.</p>
+                  <p className="text-xs text-[var(--app-muted-text)]">
+                    {jobsHydratedFromBackend
+                      ? "No available jobs in database yet."
+                      : "Loading jobs from backend..."}
+                  </p>
                 ) : (
                   <div className="max-h-32 overflow-y-auto pr-1">
                     <div className="flex flex-wrap gap-2">

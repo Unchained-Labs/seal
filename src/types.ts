@@ -32,6 +32,7 @@ export interface JobResponse {
   job: Job;
   output: JobOutput | null;
   queue_rank: number | null;
+  dependency_job_ids: string[];
 }
 
 export interface QueueItem {
