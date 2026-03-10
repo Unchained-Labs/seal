@@ -323,6 +323,14 @@ export async function setJobProjectPath(jobId: string, projectPath: string): Pro
   });
 }
 
+export async function setJobDependencies(jobId: string, dependencyJobIds: string[]): Promise<void> {
+  await jsonRequest<void>(`/v1/jobs/${jobId}/dependencies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dependency_job_ids: dependencyJobIds })
+  });
+}
+
 export async function setJobRuntimeLaunchConfig(
   jobId: string,
   payload: RuntimeLaunchConfigRequest

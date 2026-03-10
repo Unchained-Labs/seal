@@ -14,7 +14,7 @@ import {
   restartRuntimeContainer,
   resumeJob,
   runWorkspaceCommand,
-  setJobProjectPath,
+  setJobDependencies,
   setJobRuntimeLaunchConfig,
   startJobRuntimeLaunch,
   startRuntimeContainer,
@@ -310,8 +310,7 @@ export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
-  const [projectPath, setProjectPath] = useState("");
-  const [dependencyJobIdsInput, setDependencyJobIdsInput] = useState("");
+  const [selectedDependencyJobIds, setSelectedDependencyJobIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -551,21 +550,12 @@ export default function App() {
     setSubmitFeedback("Submitting task...");
     setIsSubmitting(true);
     try {
-      const dependencyJobIds = dependencyJobIdsInput
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean);
       const job = await enqueuePrompt({
         prompt,
-        project_path: projectPath.trim() || undefined,
-        dependency_job_ids: dependencyJobIds.length ? dependencyJobIds : undefined
+        dependency_job_ids: selectedDependencyJobIds.length ? selectedDependencyJobIds : undefined
       });
-      if (projectPath.trim()) {
-        await setJobProjectPath(job.id, projectPath.trim());
-      }
       setPrompt("");
-      setProjectPath("");
-      setDependencyJobIdsInput("");
+      setSelectedDependencyJobIds([]);
       setSubmitFeedback(`Queued task ${job.id.slice(0, 8)}...`);
       setJobs((prev) => ({
         ...prev,
@@ -624,8 +614,12 @@ export default function App() {
         const response = await enqueueVoicePrompt(audioBlob, {
           workspace_id: undefined
         });
+        if (selectedDependencyJobIds.length > 0) {
+          await setJobDependencies(response.job.id, selectedDependencyJobIds);
+        }
         setVoiceTranscript(response.transcript);
         setPrompt(response.transcript);
+        setSelectedDependencyJobIds([]);
         setVoiceAudioByJob((prev) => ({ ...prev, [response.job.id]: dataUrl }));
         setSubmitFeedback(`Queued voice task ${response.job.id.slice(0, 8)}...`);
         setJobs((prev) => ({
@@ -644,7 +638,7 @@ export default function App() {
         setIsVoiceProcessing(false);
       }
     },
-    [refreshJobs]
+    [refreshJobs, selectedDependencyJobIds]
   );
 
   const handleRunWorkspaceCommand = async () => {
@@ -687,6 +681,19 @@ export default function App() {
         .sort((a, b) => (a.queue_rank ?? Number.MAX_SAFE_INTEGER) - (b.queue_rank ?? Number.MAX_SAFE_INTEGER)),
     [jobList]
   );
+  const dependencyCandidates = useMemo(
+    () =>
+      [...jobList]
+        .filter((item) => item.job.status !== "cancelled")
+        .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
+        .slice(0, 120),
+    [jobList]
+  );
+  useEffect(() => {
+    setSelectedDependencyJobIds((previous) =>
+      previous.filter((jobId) => dependencyCandidates.some((candidate) => candidate.job.id === jobId))
+    );
+  }, [dependencyCandidates]);
   const startVoiceRecording = useCallback(async () => {
     setError(null);
     if (!voiceSupported) {
@@ -1210,18 +1217,6 @@ export default function App() {
                         rows={5}
                         required={composerMode === "text"}
                       />
-                      <input
-                        className="app-input mt-2 rounded-lg px-3 py-2 text-sm"
-                        placeholder="Project path in workspace (optional), e.g. apps/todo"
-                        value={projectPath}
-                        onChange={(event) => setProjectPath(event.target.value)}
-                      />
-                      <input
-                        className="app-input mt-2 rounded-lg px-3 py-2 text-sm"
-                        placeholder="Dependency job IDs (optional, comma-separated)"
-                        value={dependencyJobIdsInput}
-                        onChange={(event) => setDependencyJobIdsInput(event.target.value)}
-                      />
                     </div>
                     <div className="mt-3 flex justify-center">
                       <button
@@ -1231,6 +1226,49 @@ export default function App() {
                       >
                         {isSubmitting ? "Submitting..." : "Send Typed Task"}
                       </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="rounded-lg border border-[var(--app-muted-border)] bg-[var(--app-card)] p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--app-subtle)]">
+                    Dependency jobs
+                  </p>
+                  <span className="text-xs text-[var(--app-muted-text)]">
+                    {selectedDependencyJobIds.length} selected
+                  </span>
+                </div>
+                {dependencyCandidates.length === 0 ? (
+                  <p className="text-xs text-[var(--app-muted-text)]">No available jobs in database yet.</p>
+                ) : (
+                  <div className="max-h-32 overflow-y-auto pr-1">
+                    <div className="flex flex-wrap gap-2">
+                      {dependencyCandidates.map((candidate) => {
+                        const jobId = candidate.job.id;
+                        const selected = selectedDependencyJobIds.includes(jobId);
+                        return (
+                          <button
+                            key={jobId}
+                            type="button"
+                            className={`rounded px-2 py-1 text-xs ${
+                              selected
+                                ? "app-button-primary border border-[var(--app-accent)]"
+                                : "app-theme-toggle"
+                            }`}
+                            onClick={() =>
+                              setSelectedDependencyJobIds((previous) =>
+                                previous.includes(jobId)
+                                  ? previous.filter((value) => value !== jobId)
+                                  : [...previous, jobId]
+                              )
+                            }
+                            title={candidate.job.prompt}
+                          >
+                            {jobId.slice(0, 8)} - {candidate.job.status}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

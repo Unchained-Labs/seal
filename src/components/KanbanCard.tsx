@@ -99,7 +99,7 @@ export function KanbanCard({
 
   return (
     <article
-      className="app-card p-3"
+      className="app-card min-w-0 overflow-hidden p-3"
       draggable={draggable}
       onDragStart={() => onDragStart?.(job.id)}
       onDragOver={(event) => {
@@ -115,8 +115,8 @@ export function KanbanCard({
         onDropOnCard?.(job.id);
       }}
     >
-      <header className="mb-2 flex items-start justify-between gap-2">
-        <p className="line-clamp-2 text-sm font-medium text-[var(--app-heading)]">{job.prompt}</p>
+      <header className="mb-2 flex min-w-0 items-start justify-between gap-2">
+        <p className="line-clamp-2 min-w-0 break-words text-sm font-medium text-[var(--app-heading)]">{job.prompt}</p>
         {queue_rank ? (
           <span className="app-count-badge rounded px-2 py-0.5 text-xs">
             #{queue_rank}
@@ -138,7 +138,7 @@ export function KanbanCard({
           {liveOutputPreview}
         </p>
       ) : null}
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {job.status === "queued" || job.status === "running" ? (
           <button
             className="app-theme-toggle rounded px-2 py-1 text-xs font-medium"
