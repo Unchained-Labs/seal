@@ -139,13 +139,13 @@ export function KanbanCard({
         </p>
       ) : null}
       <div className="mt-2 flex items-center gap-2">
-        {job.status === "queued" ? (
+        {job.status === "queued" || job.status === "running" ? (
           <button
             className="app-theme-toggle rounded px-2 py-1 text-xs font-medium"
             onClick={() => onTogglePaused?.(job.id, job.is_paused)}
             type="button"
           >
-            {job.is_paused ? "Resume" : "Pause"}
+            {job.is_paused ? "Resume" : "Hold"}
           </button>
         ) : null}
         {job.status === "queued" || job.status === "running" ? (

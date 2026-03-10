@@ -5,6 +5,7 @@ import type {
   Project,
   QueueItem,
   RuntimeContainerInfo,
+  RuntimeLaunchConfigRequest,
   RuntimeLogsResponse,
   VoiceEnqueueResponse,
   Workspace,
@@ -62,6 +63,9 @@ async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`Otter API ${response.status}: ${body}`);
   }
   logApi("request:success", { method, path, status: response.status, elapsedMs });
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
 }
 
@@ -259,6 +263,32 @@ export async function pauseJob(jobId: string): Promise<void> {
   });
 }
 
+export async function holdJob(jobId: string): Promise<void> {
+  const startedAt = performance.now();
+  const path = `/v1/jobs/${jobId}/hold`;
+  logApi("request:start", { method: "POST", path });
+  const response = await fetch(`${OTTER_URL}${path}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", {
+    method: "POST",
+    path,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
 export async function resumeJob(jobId: string): Promise<void> {
   const startedAt = performance.now();
   const path = `/v1/jobs/${jobId}/resume`;
@@ -282,6 +312,37 @@ export async function resumeJob(jobId: string): Promise<void> {
     path,
     status: response.status,
     elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
+export async function setJobProjectPath(jobId: string, projectPath: string): Promise<void> {
+  await jsonRequest<void>(`/v1/jobs/${jobId}/project-path`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_path: projectPath })
+  });
+}
+
+export async function setJobRuntimeLaunchConfig(
+  jobId: string,
+  payload: RuntimeLaunchConfigRequest
+): Promise<void> {
+  await jsonRequest<void>(`/v1/jobs/${jobId}/runtime-launch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function startJobRuntimeLaunch(jobId: string): Promise<WorkspaceCommandResponse> {
+  return jsonRequest<WorkspaceCommandResponse>(`/v1/jobs/${jobId}/runtime-launch/start`, {
+    method: "POST"
+  });
+}
+
+export async function stopJobRuntimeLaunch(jobId: string): Promise<WorkspaceCommandResponse> {
+  return jsonRequest<WorkspaceCommandResponse>(`/v1/jobs/${jobId}/runtime-launch/stop`, {
+    method: "POST"
   });
 }
 

@@ -7,14 +7,18 @@ import {
   getJob,
   getRuntimeLogs,
   getRuntimeStatus,
+  holdJob,
   listHistory,
   listQueue,
   openRuntimeShellSocket,
-  pauseJob,
   restartRuntimeContainer,
   resumeJob,
   runWorkspaceCommand,
+  setJobProjectPath,
+  setJobRuntimeLaunchConfig,
+  startJobRuntimeLaunch,
   startRuntimeContainer,
+  stopJobRuntimeLaunch,
   stopRuntimeContainer,
   updateQueuePriority
 } from "./api/otter";
@@ -68,6 +72,10 @@ function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null)
       workspace_id: "",
       prompt,
       preview_url: null,
+      project_path: null,
+      runtime_start_command: null,
+      runtime_stop_command: null,
+      runtime_command_cwd: null,
       is_paused: false,
       status: "queued",
       priority: rank ?? 100,
@@ -90,6 +98,10 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
       workspace_id: item.workspace_id,
       prompt: item.prompt,
       preview_url: null,
+      project_path: null,
+      runtime_start_command: null,
+      runtime_stop_command: null,
+      runtime_command_cwd: null,
       is_paused: false,
       status: item.status,
       priority: 100,
@@ -298,6 +310,8 @@ export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
+  const [projectPath, setProjectPath] = useState("");
+  const [dependencyJobIdsInput, setDependencyJobIdsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -318,6 +332,10 @@ export default function App() {
   const [modalCommand, setModalCommand] = useState("ls -la");
   const [modalCommandRunning, setModalCommandRunning] = useState(false);
   const [modalCommandResult, setModalCommandResult] = useState<WorkspaceCommandResponse | null>(null);
+  const [runtimeStartCommand, setRuntimeStartCommand] = useState("");
+  const [runtimeStopCommand, setRuntimeStopCommand] = useState("");
+  const [runtimeWorkingDirectory, setRuntimeWorkingDirectory] = useState("");
+  const [runtimeCommandRunning, setRuntimeCommandRunning] = useState<"start" | "stop" | null>(null);
   const [modalShellCwdByJob, setModalShellCwdByJob] = useState<Record<string, string>>({});
   const [modalPreviewTab, setModalPreviewTab] = useState<"terminal" | "browser">("terminal");
   const [modalPreviewFullscreen, setModalPreviewFullscreen] = useState(false);
@@ -430,7 +448,6 @@ export default function App() {
 
   useEffect(() => {
     void refreshJobs().catch((err: unknown) => {
-      setBackendHealth("offline");
       setError(String(err));
     });
   }, [refreshJobs]);
@@ -438,7 +455,6 @@ export default function App() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       void refreshJobs().catch((err: unknown) => {
-        setBackendHealth("offline");
         setError(String(err));
       });
     }, 5000);
@@ -457,7 +473,7 @@ export default function App() {
         setBackendHealth("checking");
       }
       healthCheckInFlightRef.current = true;
-      const alive = await checkBackendHealth(2500);
+      const alive = await checkBackendHealth(5000);
       healthCheckInFlightRef.current = false;
       if (!isCancelled) {
         setBackendHealth(alive ? "online" : "offline");
@@ -535,10 +551,21 @@ export default function App() {
     setSubmitFeedback("Submitting task...");
     setIsSubmitting(true);
     try {
+      const dependencyJobIds = dependencyJobIdsInput
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
       const job = await enqueuePrompt({
-        prompt
+        prompt,
+        project_path: projectPath.trim() || undefined,
+        dependency_job_ids: dependencyJobIds.length ? dependencyJobIds : undefined
       });
+      if (projectPath.trim()) {
+        await setJobProjectPath(job.id, projectPath.trim());
+      }
       setPrompt("");
+      setProjectPath("");
+      setDependencyJobIdsInput("");
       setSubmitFeedback(`Queued task ${job.id.slice(0, 8)}...`);
       setJobs((prev) => ({
         ...prev,
@@ -550,7 +577,6 @@ export default function App() {
       }));
       await refreshJobs();
     } catch (err: unknown) {
-      setBackendHealth("offline");
       setError(String(err));
       setSubmitFeedback("Failed to submit task.");
     } finally {
@@ -565,7 +591,6 @@ export default function App() {
       const refreshed = await getJob(jobId);
       setJobs((prev) => ({ ...prev, [jobId]: refreshed }));
     } catch (err: unknown) {
-      setBackendHealth("offline");
       setError(String(err));
     }
   };
@@ -576,12 +601,11 @@ export default function App() {
       if (paused) {
         await resumeJob(jobId);
       } else {
-        await pauseJob(jobId);
+        await holdJob(jobId);
       }
       const refreshed = await getJob(jobId);
       setJobs((prev) => ({ ...prev, [jobId]: refreshed }));
     } catch (err: unknown) {
-      setBackendHealth("offline");
       setError(String(err));
     }
   };
@@ -614,7 +638,6 @@ export default function App() {
         }));
         await refreshJobs();
       } catch (err: unknown) {
-        setBackendHealth("offline");
         setError(String(err));
         setSubmitFeedback("Voice command failed.");
       } finally {
@@ -811,10 +834,13 @@ export default function App() {
   useEffect(() => {
     setModalCommandResult(null);
     setModalCommand("ls -la");
+    setRuntimeStartCommand(selectedJob?.job.runtime_start_command ?? "");
+    setRuntimeStopCommand(selectedJob?.job.runtime_stop_command ?? "");
+    setRuntimeWorkingDirectory(selectedJob?.job.runtime_command_cwd ?? "");
     setPreviewUrl("");
     setModalPreviewTab("terminal");
     setModalPreviewFullscreen(false);
-  }, [selectedJobId]);
+  }, [selectedJobId, selectedJob?.job.runtime_command_cwd, selectedJob?.job.runtime_start_command, selectedJob?.job.runtime_stop_command]);
   useEffect(() => {
     if (!selectedWorkspaceId) {
       return;
@@ -990,6 +1016,57 @@ export default function App() {
     }
   };
 
+  const handleSaveRuntimeLaunchConfig = async () => {
+    if (!selectedJobId) {
+      return;
+    }
+    if (!runtimeStartCommand.trim()) {
+      setError("Runtime start command is required.");
+      return;
+    }
+    try {
+      await setJobRuntimeLaunchConfig(selectedJobId, {
+        start_command: runtimeStartCommand.trim(),
+        stop_command: runtimeStopCommand.trim() || undefined,
+        working_directory: runtimeWorkingDirectory.trim() || undefined
+      });
+      const refreshed = await getJob(selectedJobId);
+      setJobs((prev) => ({ ...prev, [selectedJobId]: refreshed }));
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  };
+
+  const handleRunSavedRuntimeCommand = async (action: "start" | "stop") => {
+    if (!selectedJobId) {
+      return;
+    }
+    setRuntimeCommandRunning(action);
+    try {
+      const result = action === "start" ? await startJobRuntimeLaunch(selectedJobId) : await stopJobRuntimeLaunch(selectedJobId);
+      const entry: TerminalHistoryEntry = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command: result.command,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+        exitCode: result.exit_code ?? null,
+        timedOut: result.timed_out ?? false,
+        createdAt: new Date().toISOString(),
+        workingDirectory: result.working_directory
+      };
+      setModalTerminalHistoryByJob((prev) => ({
+        ...prev,
+        [selectedJobId]: [...(prev[selectedJobId] ?? []), entry].slice(-120)
+      }));
+      const refreshed = await getJob(selectedJobId);
+      setJobs((prev) => ({ ...prev, [selectedJobId]: refreshed }));
+    } catch (err: unknown) {
+      setError(String(err));
+    } finally {
+      setRuntimeCommandRunning(null);
+    }
+  };
+
   const setJobAudioRef = (jobId: string, element: HTMLAudioElement | null) => {
     audioRefs.current[jobId] = element;
   };
@@ -1132,6 +1209,18 @@ export default function App() {
                         }}
                         rows={5}
                         required={composerMode === "text"}
+                      />
+                      <input
+                        className="app-input mt-2 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Project path in workspace (optional), e.g. apps/todo"
+                        value={projectPath}
+                        onChange={(event) => setProjectPath(event.target.value)}
+                      />
+                      <input
+                        className="app-input mt-2 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Dependency job IDs (optional, comma-separated)"
+                        value={dependencyJobIdsInput}
+                        onChange={(event) => setDependencyJobIdsInput(event.target.value)}
                       />
                     </div>
                     <div className="mt-3 flex justify-center">
@@ -1369,6 +1458,60 @@ export default function App() {
                   >
                     Stop
                   </button>
+                </div>
+                <div className="mt-3 rounded border border-[var(--app-muted-border)] bg-[var(--app-surface)] p-2">
+                  <p className="text-xs font-semibold text-[var(--app-subtle)]">Saved runtime launch commands</p>
+                  <div className="mt-2 grid gap-2">
+                    <input
+                      className="app-input rounded px-2 py-1 text-xs"
+                      placeholder="Start command (required), e.g. docker compose up -d"
+                      value={runtimeStartCommand}
+                      onChange={(event) => setRuntimeStartCommand(event.target.value)}
+                    />
+                    <input
+                      className="app-input rounded px-2 py-1 text-xs"
+                      placeholder="Stop command (optional), e.g. docker compose down"
+                      value={runtimeStopCommand}
+                      onChange={(event) => setRuntimeStopCommand(event.target.value)}
+                    />
+                    <input
+                      className="app-input rounded px-2 py-1 text-xs"
+                      placeholder="Working directory relative to workspace root (optional)"
+                      value={runtimeWorkingDirectory}
+                      onChange={(event) => setRuntimeWorkingDirectory(event.target.value)}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="app-theme-toggle rounded px-2 py-1 text-xs"
+                      onClick={() => {
+                        void handleSaveRuntimeLaunchConfig();
+                      }}
+                    >
+                      Save runtime commands
+                    </button>
+                    <button
+                      type="button"
+                      className="app-theme-toggle rounded px-2 py-1 text-xs"
+                      disabled={runtimeCommandRunning !== null}
+                      onClick={() => {
+                        void handleRunSavedRuntimeCommand("start");
+                      }}
+                    >
+                      {runtimeCommandRunning === "start" ? "Starting..." : "Run saved start"}
+                    </button>
+                    <button
+                      type="button"
+                      className="app-theme-toggle rounded px-2 py-1 text-xs"
+                      disabled={runtimeCommandRunning !== null}
+                      onClick={() => {
+                        void handleRunSavedRuntimeCommand("stop");
+                      }}
+                    >
+                      {runtimeCommandRunning === "stop" ? "Stopping..." : "Run saved stop"}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : null}

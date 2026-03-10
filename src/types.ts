@@ -5,6 +5,10 @@ export interface Job {
   workspace_id: string;
   prompt: string;
   preview_url: string | null;
+  project_path: string | null;
+  runtime_start_command: string | null;
+  runtime_stop_command: string | null;
+  runtime_command_cwd: string | null;
   is_paused: boolean;
   status: JobStatus;
   priority: number;
@@ -35,6 +39,9 @@ export interface QueueItem {
   workspace_id: string;
   prompt: string;
   is_paused: boolean;
+  blocked_by_dependencies: boolean;
+  dependency_count: number;
+  unresolved_dependency_count: number;
   priority: number;
   schedule_at: string | null;
   queue_rank: number;
@@ -110,6 +117,14 @@ export interface EnqueuePromptRequest {
   workspace_id?: string;
   prompt: string;
   priority?: number;
+  project_path?: string;
+  dependency_job_ids?: string[];
+}
+
+export interface RuntimeLaunchConfigRequest {
+  start_command: string;
+  stop_command?: string;
+  working_directory?: string;
 }
 
 export interface VoiceEnqueueResponse {
