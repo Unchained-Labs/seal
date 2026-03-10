@@ -261,6 +261,39 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
 }
 
+function FooterGithubIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        fill="currentColor"
+        d="M12 2a10 10 0 0 0-3.16 19.49c.5.1.68-.22.68-.48v-1.7c-2.78.6-3.37-1.18-3.37-1.18-.46-1.17-1.11-1.48-1.11-1.48-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.9.82.09-.65.35-1.08.64-1.33-2.22-.25-4.56-1.1-4.56-4.9 0-1.09.4-1.98 1.03-2.67-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.7 9.7 0 0 1 5 0c1.9-1.29 2.74-1.02 2.74-1.02.55 1.38.2 2.4.1 2.65.64.69 1.02 1.58 1.02 2.67 0 3.8-2.34 4.65-4.57 4.89.36.3.68.9.68 1.82v2.7c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+      />
+    </svg>
+  );
+}
+
+function FooterLinkedinIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        fill="currentColor"
+        d="M6.94 8.5a1.56 1.56 0 1 1 0-3.12 1.56 1.56 0 0 1 0 3.12ZM5.56 9.75h2.76V18H5.56V9.75Zm4.3 0h2.65v1.13h.04c.37-.7 1.28-1.44 2.63-1.44 2.81 0 3.33 1.85 3.33 4.26V18h-2.76v-3.83c0-.91-.02-2.08-1.27-2.08-1.27 0-1.46.99-1.46 2.01V18H9.86V9.75Z"
+      />
+    </svg>
+  );
+}
+
+function FooterGlobeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        fill="currentColor"
+        d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm6.92 9h-3.05a15.2 15.2 0 0 0-1.2-5.02A8.03 8.03 0 0 1 18.92 11Zm-6.92 9a13.1 13.1 0 0 1-2.03-5h4.06a13.1 13.1 0 0 1-2.03 5Zm-2.38-7a13.07 13.07 0 0 1 0-2h4.76a13.07 13.07 0 0 1 0 2H9.62Zm-5.54-2a8.03 8.03 0 0 1 4.25-5.02A15.2 15.2 0 0 0 7.13 11H4.08Zm0 2h3.05a15.2 15.2 0 0 0 1.2 5.02A8.03 8.03 0 0 1 4.08 13Zm10.59 5.02A15.2 15.2 0 0 0 15.87 13h3.05a8.03 8.03 0 0 1-4.25 5.02Zm1.2-7h-3.05a13.1 13.1 0 0 0-2.03-5h2.16a13.4 13.4 0 0 1 2.92 5ZM11.06 5a13.1 13.1 0 0 0-2.03 5H6a13.4 13.4 0 0 1 2.9-5h2.16Z"
+      />
+    </svg>
+  );
+}
+
 export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
@@ -1224,6 +1257,41 @@ export default function App() {
               unchainlabs.xyz
             </a>
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <a
+              href="https://github.com/Unchained-Labs"
+              target="_blank"
+              rel="noreferrer"
+              className="app-theme-toggle inline-flex items-center gap-1 rounded px-2 py-1 text-xs"
+              aria-label="Unchained Labs GitHub"
+              title="Unchained Labs GitHub"
+            >
+              <FooterGithubIcon className="h-4 w-4" />
+              <span>GitHub</span>
+            </a>
+            <a
+              href="https://www.linkedin.com/company/unchained-labs-inc/"
+              target="_blank"
+              rel="noreferrer"
+              className="app-theme-toggle inline-flex items-center gap-1 rounded px-2 py-1 text-xs"
+              aria-label="Unchained Labs LinkedIn"
+              title="Unchained Labs LinkedIn"
+            >
+              <FooterLinkedinIcon className="h-4 w-4" />
+              <span>LinkedIn</span>
+            </a>
+            <a
+              href="https://kymatics.vercel.app/"
+              target="_blank"
+              rel="noreferrer"
+              className="app-theme-toggle inline-flex items-center gap-1 rounded px-2 py-1 text-xs"
+              aria-label="Kymatics website"
+              title="Kymatics website"
+            >
+              <FooterGlobeIcon className="h-4 w-4" />
+              <span>Kymatics</span>
+            </a>
+          </div>
         </footer>
       </div>
 

@@ -4,46 +4,46 @@
 
 @layer base {
   :root {
-    --palette-bg: #1d3557;
-    --palette-mint: #f1faee;
-    --palette-purple: #457b9d;
-    --palette-lavender: #a8dadc;
-    --palette-gray-1: #f1faee;
-    --palette-gray-2: #d5ecec;
-    --palette-gray-3: #9cc7cd;
-    --palette-ink: #10243f;
-    --app-bg: #1d3557;
-    --app-surface: #26486f;
-    --app-panel: #224161;
-    --app-card: #1f3b58;
-    --app-text: #f1faee;
-    --app-heading: #f1faee;
-    --app-subtle: #cbe7e8;
-    --app-accent: #a8dadc;
-    --app-accent-alt: #457b9d;
-    --app-purple: #457b9d;
-    --app-border: #4f86ab;
-    --app-muted-border: #5f96b8;
-    --app-muted-text: #c7e5e6;
-    --app-result-bg: #1f3b58;
+    --palette-bg: #00052b;
+    --palette-mint: #4bffca;
+    --palette-purple: #8024e7;
+    --palette-lavender: #b187ff;
+    --palette-gray-1: #e6e1ff;
+    --palette-gray-2: #b8b3de;
+    --palette-gray-3: #8c87b4;
+    --palette-ink: #00052b;
+    --app-bg: #00052b;
+    --app-surface: #050a34;
+    --app-panel: #070d38;
+    --app-card: #0a1140;
+    --app-text: #e6e1ff;
+    --app-heading: #f2f0ff;
+    --app-subtle: #b8b3de;
+    --app-accent: #4bffca;
+    --app-accent-alt: #b187ff;
+    --app-purple: #8024e7;
+    --app-border: #2f2a72;
+    --app-muted-border: #21275f;
+    --app-muted-text: #9f9ac9;
+    --app-result-bg: #060c35;
     color-scheme: dark;
   }
 
   [data-theme="light"] {
-    --app-bg: #eef0ff;
+    --app-bg: #ece9ff;
     --app-surface: #ffffff;
-    --app-panel: #f3f4ff;
+    --app-panel: #f6f3ff;
     --app-card: #ffffff;
-    --app-text: #1c2258;
-    --app-heading: #11184d;
-    --app-subtle: #4e5390;
+    --app-text: #1d1452;
+    --app-heading: #140a46;
+    --app-subtle: #5d4f92;
     --app-accent: #8024e7;
     --app-accent-alt: #4bffca;
     --app-purple: #8024e7;
-    --app-border: #ced5ff;
-    --app-muted-border: #d9ddff;
-    --app-muted-text: #5b639c;
-    --app-result-bg: #f7f8ff;
+    --app-border: #d4c6ff;
+    --app-muted-border: #ddd3ff;
+    --app-muted-text: #6f62a3;
+    --app-result-bg: #f3efff;
     color-scheme: light;
   }
 }
@@ -191,8 +191,8 @@ body {
   border-radius: 0.75rem;
   width: 3.2rem;
   height: 3.2rem;
-  background: color-mix(in oklab, var(--app-card) 88%, var(--app-purple) 12%);
-  color: var(--app-heading);
+  background: color-mix(in oklab, var(--app-purple) 48%, var(--app-card) 52%);
+  color: color-mix(in oklab, #ffffff 90%, var(--app-heading) 10%);
   cursor: pointer;
   transition:
     transform 140ms ease,
@@ -205,8 +205,8 @@ body {
   transform: translateY(-1px) scale(1.015);
   border-color: color-mix(in oklab, var(--app-accent) 56%, var(--app-muted-border));
   box-shadow:
-    0 0 0 2px color-mix(in oklab, var(--app-accent) 16%, transparent),
-    0 0 18px color-mix(in oklab, var(--app-accent-alt) 26%, transparent);
+    0 0 0 2px color-mix(in oklab, var(--app-purple) 34%, transparent),
+    0 0 24px color-mix(in oklab, var(--app-purple) 38%, transparent);
   filter: saturate(1.08);
 }
 
@@ -218,14 +218,14 @@ body {
 
 .app-mic-button--hero:hover {
   box-shadow:
-    0 0 0 2px color-mix(in oklab, var(--app-accent) 20%, transparent),
-    0 0 28px color-mix(in oklab, var(--app-accent) 38%, transparent),
-    0 0 46px color-mix(in oklab, var(--app-accent-alt) 24%, transparent);
+    0 0 0 2px color-mix(in oklab, var(--app-purple) 30%, transparent),
+    0 0 34px color-mix(in oklab, var(--app-purple) 46%, transparent),
+    0 0 54px color-mix(in oklab, var(--app-accent-alt) 16%, transparent);
 }
 
 .app-mic-button--active {
-  color: #252525;
-  background: var(--app-accent);
+  color: #f3ecff;
+  background: color-mix(in oklab, var(--app-purple) 88%, #ffffff 12%);
 }
 
 .app-mic-button--recording {
@@ -308,7 +308,7 @@ kbd {
 
 .app-button-primary {
   border: 1px solid var(--app-border);
-  background: color-mix(in oklab, var(--app-card) 75%, var(--app-accent) 25%);
+  background: color-mix(in oklab, var(--app-card) 85%, var(--app-accent) 15%);
   color: #ecfff9;
 }
 
@@ -443,7 +443,7 @@ kbd {
   background: linear-gradient(
     180deg,
     color-mix(in oklab, var(--app-accent-alt) 70%, var(--app-accent)),
-    color-mix(in oklab, var(--app-purple) 55%, var(--app-card))
+    color-mix(in oklab, var(--app-purple) 25%, var(--app-card))
   );
   border-radius: 999px;
   border: 2px solid color-mix(in oklab, var(--app-bg) 58%, var(--app-surface));
@@ -472,14 +472,14 @@ kbd {
 }
 
 .app-markdown code {
-  background: color-mix(in oklab, var(--app-card) 78%, var(--app-purple) 22%);
+  background: color-mix(in oklab, var(--app-card) 92%, var(--app-purple) 8%);
   border: 1px solid var(--app-muted-border);
   border-radius: 0.35rem;
   padding: 0.1rem 0.3rem;
 }
 
 .app-markdown pre {
-  background: color-mix(in oklab, var(--app-card) 88%, var(--app-purple) 12%);
+  background: color-mix(in oklab, var(--app-card) 95%, var(--app-purple) 5%);
   border: 1px solid var(--app-muted-border);
   border-radius: 0.6rem;
   padding: 0.55rem;
@@ -517,8 +517,8 @@ kbd {
   border-radius: 0.9rem;
   background: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--app-card) 82%, var(--app-accent-alt) 18%),
-    color-mix(in oklab, var(--app-card) 93%, var(--app-surface) 7%)
+    color-mix(in oklab, var(--app-card) 92%, var(--app-accent-alt) 8%),
+    color-mix(in oklab, var(--app-card) 96%, var(--app-surface) 4%)
   );
   padding: 0.55rem 0.65rem;
 }
@@ -581,7 +581,7 @@ kbd {
 .app-tab-button--active {
   border-color: var(--app-accent-alt);
   color: var(--app-heading);
-  background: color-mix(in oklab, var(--app-card) 70%, var(--app-accent-alt) 30%);
+  background: color-mix(in oklab, var(--app-card) 88%, var(--app-accent-alt) 12%);
 }
 
 .app-terminal-shell {
