@@ -5,6 +5,7 @@ import type {
   Project,
   QueueItem,
   RuntimeContainerInfo,
+  RuntimeLaunchConfigRequest,
   RuntimeLogsResponse,
   VoiceEnqueueResponse,
   Workspace,
@@ -62,6 +63,9 @@ async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`Otter API ${response.status}: ${body}`);
   }
   logApi("request:success", { method, path, status: response.status, elapsedMs });
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
 }
 
@@ -168,7 +172,7 @@ export async function enqueuePrompt(payload: EnqueuePromptRequest): Promise<JobR
 
 export async function enqueueVoicePrompt(
   audioBlob: Blob,
-  options?: { workspace_id?: string; language?: string; provider?: string }
+  options?: { workspace_id?: string; language?: string; provider?: string; dependency_job_ids?: string[] }
 ): Promise<VoiceEnqueueResponse> {
   const form = new FormData();
   form.append("file", audioBlob, "voice-command.webm");
@@ -181,27 +185,44 @@ export async function enqueueVoicePrompt(
   if (options?.provider) {
     form.append("provider", options.provider);
   }
+  if (options?.dependency_job_ids?.length) {
+    for (const dependencyJobId of options.dependency_job_ids) {
+      form.append("dependency_job_id", dependencyJobId);
+    }
+  }
 
   const startedAt = performance.now();
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 60_000);
   logApi("request:start", { method: "POST", path: "/v1/voice/prompts" });
-  const response = await fetch(`${OTTER_URL}/v1/voice/prompts`, {
-    method: "POST",
-    body: form
-  });
-  const elapsedMs = Math.round(performance.now() - startedAt);
-  if (!response.ok) {
-    const body = await response.text();
-    logApi("request:error", {
+  try {
+    const response = await fetch(`${OTTER_URL}/v1/voice/prompts`, {
       method: "POST",
-      path: "/v1/voice/prompts",
-      status: response.status,
-      elapsedMs,
-      body
+      body: form,
+      signal: controller.signal
     });
-    throw new Error(`Otter API ${response.status}: ${body}`);
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    if (!response.ok) {
+      const body = await response.text();
+      logApi("request:error", {
+        method: "POST",
+        path: "/v1/voice/prompts",
+        status: response.status,
+        elapsedMs,
+        body
+      });
+      throw new Error(`Otter API ${response.status}: ${body}`);
+    }
+    logApi("request:success", { method: "POST", path: "/v1/voice/prompts", status: response.status, elapsedMs });
+    return (await response.json()) as VoiceEnqueueResponse;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Voice request timed out after 60s. Please try again.");
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  logApi("request:success", { method: "POST", path: "/v1/voice/prompts", status: response.status, elapsedMs });
-  return (await response.json()) as VoiceEnqueueResponse;
 }
 
 export async function getJob(jobId: string): Promise<JobResponse> {
@@ -259,6 +280,32 @@ export async function pauseJob(jobId: string): Promise<void> {
   });
 }
 
+export async function holdJob(jobId: string): Promise<void> {
+  const startedAt = performance.now();
+  const path = `/v1/jobs/${jobId}/hold`;
+  logApi("request:start", { method: "POST", path });
+  const response = await fetch(`${OTTER_URL}${path}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    logApi("request:error", {
+      method: "POST",
+      path,
+      status: response.status,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      body
+    });
+    throw new Error(`Otter API ${response.status}: ${body}`);
+  }
+  logApi("request:success", {
+    method: "POST",
+    path,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
 export async function resumeJob(jobId: string): Promise<void> {
   const startedAt = performance.now();
   const path = `/v1/jobs/${jobId}/resume`;
@@ -282,6 +329,45 @@ export async function resumeJob(jobId: string): Promise<void> {
     path,
     status: response.status,
     elapsedMs: Math.round(performance.now() - startedAt)
+  });
+}
+
+export async function setJobProjectPath(jobId: string, projectPath: string): Promise<void> {
+  await jsonRequest<void>(`/v1/jobs/${jobId}/project-path`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_path: projectPath })
+  });
+}
+
+export async function setJobDependencies(jobId: string, dependencyJobIds: string[]): Promise<void> {
+  await jsonRequest<void>(`/v1/jobs/${jobId}/dependencies`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dependency_job_ids: dependencyJobIds })
+  });
+}
+
+export async function setJobRuntimeLaunchConfig(
+  jobId: string,
+  payload: RuntimeLaunchConfigRequest
+): Promise<void> {
+  await jsonRequest<void>(`/v1/jobs/${jobId}/runtime-launch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function startJobRuntimeLaunch(jobId: string): Promise<WorkspaceCommandResponse> {
+  return jsonRequest<WorkspaceCommandResponse>(`/v1/jobs/${jobId}/runtime-launch/start`, {
+    method: "POST"
+  });
+}
+
+export async function stopJobRuntimeLaunch(jobId: string): Promise<WorkspaceCommandResponse> {
+  return jsonRequest<WorkspaceCommandResponse>(`/v1/jobs/${jobId}/runtime-launch/stop`, {
+    method: "POST"
   });
 }
 
