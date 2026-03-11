@@ -192,25 +192,37 @@ export async function enqueueVoicePrompt(
   }
 
   const startedAt = performance.now();
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 60_000);
   logApi("request:start", { method: "POST", path: "/v1/voice/prompts" });
-  const response = await fetch(`${OTTER_URL}/v1/voice/prompts`, {
-    method: "POST",
-    body: form
-  });
-  const elapsedMs = Math.round(performance.now() - startedAt);
-  if (!response.ok) {
-    const body = await response.text();
-    logApi("request:error", {
+  try {
+    const response = await fetch(`${OTTER_URL}/v1/voice/prompts`, {
       method: "POST",
-      path: "/v1/voice/prompts",
-      status: response.status,
-      elapsedMs,
-      body
+      body: form,
+      signal: controller.signal
     });
-    throw new Error(`Otter API ${response.status}: ${body}`);
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    if (!response.ok) {
+      const body = await response.text();
+      logApi("request:error", {
+        method: "POST",
+        path: "/v1/voice/prompts",
+        status: response.status,
+        elapsedMs,
+        body
+      });
+      throw new Error(`Otter API ${response.status}: ${body}`);
+    }
+    logApi("request:success", { method: "POST", path: "/v1/voice/prompts", status: response.status, elapsedMs });
+    return (await response.json()) as VoiceEnqueueResponse;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Voice request timed out after 60s. Please try again.");
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  logApi("request:success", { method: "POST", path: "/v1/voice/prompts", status: response.status, elapsedMs });
-  return (await response.json()) as VoiceEnqueueResponse;
 }
 
 export async function getJob(jobId: string): Promise<JobResponse> {
