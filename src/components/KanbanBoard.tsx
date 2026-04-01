@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import type { JobResponse } from "../types";
+import type { JobResponse, QueueItem } from "../types";
 import { DoneIcon, FailedIcon, RunningIcon, TodoIcon } from "./icons";
 import { KanbanColumn } from "./KanbanColumn";
 
 interface KanbanBoardProps {
   jobs: JobResponse[];
+  queueItemsByJobId?: Record<string, QueueItem>;
   onCancel: (jobId: string) => void;
   onTogglePaused: (jobId: string, paused: boolean) => void;
   onOpen: (jobId: string) => void;
@@ -18,6 +19,7 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({
   jobs,
+  queueItemsByJobId,
   onCancel,
   onTogglePaused,
   onOpen,
@@ -28,6 +30,7 @@ export function KanbanBoard({
   onTodoDragStart,
   liveOutputPreviewForJob
 }: KanbanBoardProps) {
+  const jobById = useMemo(() => Object.fromEntries(jobs.map((item) => [item.job.id, item])), [jobs]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "queued" | "running" | "done" | "failed">("all");
   const [voiceFilter, setVoiceFilter] = useState<"all" | "with_voice" | "without_voice">("all");
@@ -163,6 +166,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Todo"
           items={todo}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}
@@ -180,6 +185,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Running"
           items={running}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}
@@ -192,6 +199,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Done"
           items={done}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}
@@ -204,6 +213,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Blocked / Failed"
           items={blockedFailed}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}

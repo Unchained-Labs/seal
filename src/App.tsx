@@ -309,6 +309,7 @@ function FooterGlobeIcon({ className }: { className?: string }) {
 
 export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
+  const [queueItemsByJobId, setQueueItemsByJobId] = useState<Record<string, QueueItem>>({});
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
   const [selectedDependencyJobIds, setSelectedDependencyJobIds] = useState<string[]>([]);
@@ -404,6 +405,7 @@ export default function App() {
     }
     // Replace cache with backend truth so fresh DB runs don't keep stale local jobs.
     setJobs(Object.fromEntries(entries));
+    setQueueItemsByJobId(Object.fromEntries(queue.map((item) => [item.job_id, item])));
     setJobsHydratedFromBackend(true);
     setBackendHealth("online");
     setError(null);
@@ -1343,6 +1345,7 @@ export default function App() {
         <div className="flex-1 min-h-0 overflow-hidden">
           <KanbanBoard
             jobs={jobList}
+            queueItemsByJobId={queueItemsByJobId}
             onCancel={handleCancel}
             onTogglePaused={handleTogglePaused}
             onOpen={setSelectedJobId}
