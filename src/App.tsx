@@ -313,6 +313,7 @@ export default function App() {
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
   const [selectedDependencyJobIds, setSelectedDependencyJobIds] = useState<string[]>([]);
+  const selectedDependencyJobIdsRef = useRef<string[]>([]);
   const [jobsHydratedFromBackend, setJobsHydratedFromBackend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
@@ -549,6 +550,10 @@ export default function App() {
 
   useOtterEvents({ onEvent: handleEvent });
 
+  useEffect(() => {
+    selectedDependencyJobIdsRef.current = selectedDependencyJobIds;
+  }, [selectedDependencyJobIds]);
+
   const handleEnqueue = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -612,6 +617,7 @@ export default function App() {
         setError("Captured audio is empty.");
         return;
       }
+      const dependencyJobIdsAtSubmit = selectedDependencyJobIdsRef.current;
       const dataUrl = await blobToDataUrl(audioBlob);
       setIsVoiceProcessing(true);
       setSubmitFeedback("Transcribing voice command...");
@@ -619,7 +625,7 @@ export default function App() {
       try {
         const response = await enqueueVoicePrompt(audioBlob, {
           workspace_id: undefined,
-          dependency_job_ids: selectedDependencyJobIds.length ? selectedDependencyJobIds : undefined
+          dependency_job_ids: dependencyJobIdsAtSubmit.length ? dependencyJobIdsAtSubmit : undefined
         });
         setVoiceTranscript(response.transcript);
         setPrompt(response.transcript);
@@ -632,7 +638,7 @@ export default function App() {
             job: response.job,
             output: null,
             queue_rank: null,
-            dependency_job_ids: selectedDependencyJobIds
+            dependency_job_ids: dependencyJobIdsAtSubmit
           }
         }));
         await refreshJobs();
@@ -643,7 +649,7 @@ export default function App() {
         setIsVoiceProcessing(false);
       }
     },
-    [refreshJobs, selectedDependencyJobIds]
+    [refreshJobs]
   );
 
   const handleRunWorkspaceCommand = async () => {
