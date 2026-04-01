@@ -128,7 +128,15 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
 
 function detectFirstUrl(input: string): string | null {
   const match = input.match(/https?:\/\/[^\s)]+/);
-  return match?.[0] ?? null;
+  if (!match?.[0]) {
+    return null;
+  }
+  let candidate = match[0];
+  // Trim common trailing punctuation / quoting artifacts from chat output.
+  while (candidate.length > 0 && /[)\]}>.,;:'"!?]+$/.test(candidate)) {
+    candidate = candidate.replace(/[)\]}>.,;:'"!?]+$/, "");
+  }
+  return candidate || null;
 }
 
 function stringifyUnknownJson(value: unknown): string {

@@ -90,7 +90,7 @@ body {
 
 .app-board-controls {
   display: grid;
-  grid-template-columns: minmax(12rem, 1.3fr) repeat(3, minmax(9rem, 1fr)) auto;
+  grid-template-columns: minmax(12rem, 1.3fr) repeat(4, minmax(9rem, 1fr)) auto;
   gap: 0.5rem;
   align-items: center;
 }
@@ -146,6 +146,12 @@ body {
   background: var(--app-card);
   border-radius: 0.9rem;
   transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.app-card-deps {
+  max-height: 4.5rem;
+  overflow: auto;
+  padding-right: 0.15rem;
 }
 
 .app-card:hover {

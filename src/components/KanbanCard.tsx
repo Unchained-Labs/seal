@@ -151,7 +151,7 @@ export function KanbanCard({
       {dependencyCount > 0 ? (
         <div className="mt-1">
           <p className="text-[11px] text-[var(--app-subtle)]">Dependencies ({dependencyCount})</p>
-          <div className="mt-1 flex flex-wrap gap-2">
+          <div className="app-card-deps mt-1 flex flex-wrap gap-2">
             {item.dependency_job_ids.map((dependencyId) => {
               const dep = jobById?.[dependencyId];
               const depLabelPrompt = dep?.job.prompt?.trim();
