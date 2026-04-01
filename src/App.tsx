@@ -7,14 +7,17 @@ import {
   getJob,
   getRuntimeLogs,
   getRuntimeStatus,
+  holdJob,
   listHistory,
   listQueue,
   openRuntimeShellSocket,
-  pauseJob,
   restartRuntimeContainer,
   resumeJob,
   runWorkspaceCommand,
+  setJobRuntimeLaunchConfig,
+  startJobRuntimeLaunch,
   startRuntimeContainer,
+  stopJobRuntimeLaunch,
   stopRuntimeContainer,
   updateQueuePriority
 } from "./api/otter";
@@ -68,6 +71,10 @@ function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null)
       workspace_id: "",
       prompt,
       preview_url: null,
+      project_path: null,
+      runtime_start_command: null,
+      runtime_stop_command: null,
+      runtime_command_cwd: null,
       is_paused: false,
       status: "queued",
       priority: rank ?? 100,
@@ -79,7 +86,8 @@ function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null)
       updated_at: new Date().toISOString()
     },
     output: null,
-    queue_rank: rank
+    queue_rank: rank,
+    dependency_job_ids: []
   };
 }
 
@@ -90,6 +98,10 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
       workspace_id: item.workspace_id,
       prompt: item.prompt,
       preview_url: null,
+      project_path: null,
+      runtime_start_command: null,
+      runtime_stop_command: null,
+      runtime_command_cwd: null,
       is_paused: false,
       status: item.status,
       priority: 100,
@@ -109,7 +121,8 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
           created_at: item.created_at
         }
       : null,
-    queue_rank: null
+    queue_rank: null,
+    dependency_job_ids: []
   };
 }
 
@@ -298,6 +311,8 @@ export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
+  const [selectedDependencyJobIds, setSelectedDependencyJobIds] = useState<string[]>([]);
+  const [jobsHydratedFromBackend, setJobsHydratedFromBackend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -318,6 +333,10 @@ export default function App() {
   const [modalCommand, setModalCommand] = useState("ls -la");
   const [modalCommandRunning, setModalCommandRunning] = useState(false);
   const [modalCommandResult, setModalCommandResult] = useState<WorkspaceCommandResponse | null>(null);
+  const [runtimeStartCommand, setRuntimeStartCommand] = useState("");
+  const [runtimeStopCommand, setRuntimeStopCommand] = useState("");
+  const [runtimeWorkingDirectory, setRuntimeWorkingDirectory] = useState("");
+  const [runtimeCommandRunning, setRuntimeCommandRunning] = useState<"start" | "stop" | null>(null);
   const [modalShellCwdByJob, setModalShellCwdByJob] = useState<Record<string, string>>({});
   const [modalPreviewTab, setModalPreviewTab] = useState<"terminal" | "browser">("terminal");
   const [modalPreviewFullscreen, setModalPreviewFullscreen] = useState(false);
@@ -385,6 +404,7 @@ export default function App() {
     }
     // Replace cache with backend truth so fresh DB runs don't keep stale local jobs.
     setJobs(Object.fromEntries(entries));
+    setJobsHydratedFromBackend(true);
     setBackendHealth("online");
     setError(null);
     setSubmitFeedback((prev) => (prev?.includes("Queued") ? prev : null));
@@ -430,7 +450,6 @@ export default function App() {
 
   useEffect(() => {
     void refreshJobs().catch((err: unknown) => {
-      setBackendHealth("offline");
       setError(String(err));
     });
   }, [refreshJobs]);
@@ -438,7 +457,6 @@ export default function App() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       void refreshJobs().catch((err: unknown) => {
-        setBackendHealth("offline");
         setError(String(err));
       });
     }, 5000);
@@ -457,7 +475,7 @@ export default function App() {
         setBackendHealth("checking");
       }
       healthCheckInFlightRef.current = true;
-      const alive = await checkBackendHealth(2500);
+      const alive = await checkBackendHealth(5000);
       healthCheckInFlightRef.current = false;
       if (!isCancelled) {
         setBackendHealth(alive ? "online" : "offline");
@@ -536,21 +554,23 @@ export default function App() {
     setIsSubmitting(true);
     try {
       const job = await enqueuePrompt({
-        prompt
+        prompt,
+        dependency_job_ids: selectedDependencyJobIds.length ? selectedDependencyJobIds : undefined
       });
       setPrompt("");
+      setSelectedDependencyJobIds([]);
       setSubmitFeedback(`Queued task ${job.id.slice(0, 8)}...`);
       setJobs((prev) => ({
         ...prev,
         [job.id]: {
           job,
           output: null,
-          queue_rank: null
+          queue_rank: null,
+          dependency_job_ids: selectedDependencyJobIds
         }
       }));
       await refreshJobs();
     } catch (err: unknown) {
-      setBackendHealth("offline");
       setError(String(err));
       setSubmitFeedback("Failed to submit task.");
     } finally {
@@ -565,7 +585,6 @@ export default function App() {
       const refreshed = await getJob(jobId);
       setJobs((prev) => ({ ...prev, [jobId]: refreshed }));
     } catch (err: unknown) {
-      setBackendHealth("offline");
       setError(String(err));
     }
   };
@@ -576,12 +595,11 @@ export default function App() {
       if (paused) {
         await resumeJob(jobId);
       } else {
-        await pauseJob(jobId);
+        await holdJob(jobId);
       }
       const refreshed = await getJob(jobId);
       setJobs((prev) => ({ ...prev, [jobId]: refreshed }));
     } catch (err: unknown) {
-      setBackendHealth("offline");
       setError(String(err));
     }
   };
@@ -598,10 +616,12 @@ export default function App() {
       setError(null);
       try {
         const response = await enqueueVoicePrompt(audioBlob, {
-          workspace_id: undefined
+          workspace_id: undefined,
+          dependency_job_ids: selectedDependencyJobIds.length ? selectedDependencyJobIds : undefined
         });
         setVoiceTranscript(response.transcript);
         setPrompt(response.transcript);
+        setSelectedDependencyJobIds([]);
         setVoiceAudioByJob((prev) => ({ ...prev, [response.job.id]: dataUrl }));
         setSubmitFeedback(`Queued voice task ${response.job.id.slice(0, 8)}...`);
         setJobs((prev) => ({
@@ -609,19 +629,19 @@ export default function App() {
           [response.job.id]: {
             job: response.job,
             output: null,
-            queue_rank: null
+            queue_rank: null,
+            dependency_job_ids: selectedDependencyJobIds
           }
         }));
         await refreshJobs();
       } catch (err: unknown) {
-        setBackendHealth("offline");
         setError(String(err));
         setSubmitFeedback("Voice command failed.");
       } finally {
         setIsVoiceProcessing(false);
       }
     },
-    [refreshJobs]
+    [refreshJobs, selectedDependencyJobIds]
   );
 
   const handleRunWorkspaceCommand = async () => {
@@ -664,6 +684,19 @@ export default function App() {
         .sort((a, b) => (a.queue_rank ?? Number.MAX_SAFE_INTEGER) - (b.queue_rank ?? Number.MAX_SAFE_INTEGER)),
     [jobList]
   );
+  const dependencyCandidates = useMemo(
+    () =>
+      [...jobList]
+        .filter((item) => item.job.status !== "cancelled")
+        .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
+        .slice(0, 120),
+    [jobList]
+  );
+  useEffect(() => {
+    setSelectedDependencyJobIds((previous) =>
+      previous.filter((jobId) => dependencyCandidates.some((candidate) => candidate.job.id === jobId))
+    );
+  }, [dependencyCandidates]);
   const startVoiceRecording = useCallback(async () => {
     setError(null);
     if (!voiceSupported) {
@@ -811,10 +844,13 @@ export default function App() {
   useEffect(() => {
     setModalCommandResult(null);
     setModalCommand("ls -la");
+    setRuntimeStartCommand(selectedJob?.job.runtime_start_command ?? "");
+    setRuntimeStopCommand(selectedJob?.job.runtime_stop_command ?? "");
+    setRuntimeWorkingDirectory(selectedJob?.job.runtime_command_cwd ?? "");
     setPreviewUrl("");
     setModalPreviewTab("terminal");
     setModalPreviewFullscreen(false);
-  }, [selectedJobId]);
+  }, [selectedJobId, selectedJob?.job.runtime_command_cwd, selectedJob?.job.runtime_start_command, selectedJob?.job.runtime_stop_command]);
   useEffect(() => {
     if (!selectedWorkspaceId) {
       return;
@@ -990,6 +1026,57 @@ export default function App() {
     }
   };
 
+  const handleSaveRuntimeLaunchConfig = async () => {
+    if (!selectedJobId) {
+      return;
+    }
+    if (!runtimeStartCommand.trim()) {
+      setError("Runtime start command is required.");
+      return;
+    }
+    try {
+      await setJobRuntimeLaunchConfig(selectedJobId, {
+        start_command: runtimeStartCommand.trim(),
+        stop_command: runtimeStopCommand.trim() || undefined,
+        working_directory: runtimeWorkingDirectory.trim() || undefined
+      });
+      const refreshed = await getJob(selectedJobId);
+      setJobs((prev) => ({ ...prev, [selectedJobId]: refreshed }));
+    } catch (err: unknown) {
+      setError(String(err));
+    }
+  };
+
+  const handleRunSavedRuntimeCommand = async (action: "start" | "stop") => {
+    if (!selectedJobId) {
+      return;
+    }
+    setRuntimeCommandRunning(action);
+    try {
+      const result = action === "start" ? await startJobRuntimeLaunch(selectedJobId) : await stopJobRuntimeLaunch(selectedJobId);
+      const entry: TerminalHistoryEntry = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command: result.command,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+        exitCode: result.exit_code ?? null,
+        timedOut: result.timed_out ?? false,
+        createdAt: new Date().toISOString(),
+        workingDirectory: result.working_directory
+      };
+      setModalTerminalHistoryByJob((prev) => ({
+        ...prev,
+        [selectedJobId]: [...(prev[selectedJobId] ?? []), entry].slice(-120)
+      }));
+      const refreshed = await getJob(selectedJobId);
+      setJobs((prev) => ({ ...prev, [selectedJobId]: refreshed }));
+    } catch (err: unknown) {
+      setError(String(err));
+    } finally {
+      setRuntimeCommandRunning(null);
+    }
+  };
+
   const setJobAudioRef = (jobId: string, element: HTMLAudioElement | null) => {
     audioRefs.current[jobId] = element;
   };
@@ -1142,6 +1229,53 @@ export default function App() {
                       >
                         {isSubmitting ? "Submitting..." : "Send Typed Task"}
                       </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="rounded-lg border border-[var(--app-muted-border)] bg-[var(--app-card)] p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--app-subtle)]">
+                    Dependency jobs
+                  </p>
+                  <span className="text-xs text-[var(--app-muted-text)]">
+                    {selectedDependencyJobIds.length} selected
+                  </span>
+                </div>
+                {dependencyCandidates.length === 0 ? (
+                  <p className="text-xs text-[var(--app-muted-text)]">
+                    {jobsHydratedFromBackend
+                      ? "No available jobs in database yet."
+                      : "Loading jobs from backend..."}
+                  </p>
+                ) : (
+                  <div className="max-h-32 overflow-y-auto pr-1">
+                    <div className="flex flex-wrap gap-2">
+                      {dependencyCandidates.map((candidate) => {
+                        const jobId = candidate.job.id;
+                        const selected = selectedDependencyJobIds.includes(jobId);
+                        return (
+                          <button
+                            key={jobId}
+                            type="button"
+                            className={`rounded px-2 py-1 text-xs ${
+                              selected
+                                ? "app-button-primary border border-[var(--app-accent)]"
+                                : "app-theme-toggle"
+                            }`}
+                            onClick={() =>
+                              setSelectedDependencyJobIds((previous) =>
+                                previous.includes(jobId)
+                                  ? previous.filter((value) => value !== jobId)
+                                  : [...previous, jobId]
+                              )
+                            }
+                            title={candidate.job.prompt}
+                          >
+                            {jobId.slice(0, 8)} - {candidate.job.status}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1369,6 +1503,60 @@ export default function App() {
                   >
                     Stop
                   </button>
+                </div>
+                <div className="mt-3 rounded border border-[var(--app-muted-border)] bg-[var(--app-surface)] p-2">
+                  <p className="text-xs font-semibold text-[var(--app-subtle)]">Saved runtime launch commands</p>
+                  <div className="mt-2 grid gap-2">
+                    <input
+                      className="app-input rounded px-2 py-1 text-xs"
+                      placeholder="Start command (required), e.g. docker compose up -d"
+                      value={runtimeStartCommand}
+                      onChange={(event) => setRuntimeStartCommand(event.target.value)}
+                    />
+                    <input
+                      className="app-input rounded px-2 py-1 text-xs"
+                      placeholder="Stop command (optional), e.g. docker compose down"
+                      value={runtimeStopCommand}
+                      onChange={(event) => setRuntimeStopCommand(event.target.value)}
+                    />
+                    <input
+                      className="app-input rounded px-2 py-1 text-xs"
+                      placeholder="Working directory relative to workspace root (optional)"
+                      value={runtimeWorkingDirectory}
+                      onChange={(event) => setRuntimeWorkingDirectory(event.target.value)}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="app-theme-toggle rounded px-2 py-1 text-xs"
+                      onClick={() => {
+                        void handleSaveRuntimeLaunchConfig();
+                      }}
+                    >
+                      Save runtime commands
+                    </button>
+                    <button
+                      type="button"
+                      className="app-theme-toggle rounded px-2 py-1 text-xs"
+                      disabled={runtimeCommandRunning !== null}
+                      onClick={() => {
+                        void handleRunSavedRuntimeCommand("start");
+                      }}
+                    >
+                      {runtimeCommandRunning === "start" ? "Starting..." : "Run saved start"}
+                    </button>
+                    <button
+                      type="button"
+                      className="app-theme-toggle rounded px-2 py-1 text-xs"
+                      disabled={runtimeCommandRunning !== null}
+                      onClick={() => {
+                        void handleRunSavedRuntimeCommand("stop");
+                      }}
+                    >
+                      {runtimeCommandRunning === "stop" ? "Stopping..." : "Run saved stop"}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : null}

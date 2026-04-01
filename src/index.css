@@ -104,6 +104,42 @@ body {
 .app-column {
   background: var(--app-panel);
   border-radius: 1rem;
+  min-width: 0;
+}
+
+.app-column-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.app-column-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--app-accent-alt) 56%, var(--app-accent))
+    color-mix(in oklab, var(--app-card) 72%, var(--app-bg));
+}
+
+.app-column-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.app-column-scroll::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--app-card) 72%, var(--app-bg));
+  border-radius: 999px;
+}
+
+.app-column-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--app-accent-alt) 66%, var(--app-accent)),
+    color-mix(in oklab, var(--app-purple) 34%, var(--app-card))
+  );
+  border-radius: 999px;
+  border: 2px solid color-mix(in oklab, var(--app-card) 72%, var(--app-bg));
+}
+
+.app-column-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--app-accent-alt) 72%, var(--app-accent));
 }
 
 .app-card {
