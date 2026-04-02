@@ -1,10 +1,12 @@
-import type { JobResponse } from "../types";
+import type { JobResponse, QueueItem } from "../types";
 import type { ReactNode } from "react";
 import { KanbanCard } from "./KanbanCard";
 
 interface KanbanColumnProps {
   title: string;
   items: JobResponse[];
+  jobById?: Record<string, JobResponse>;
+  queueItemsByJobId?: Record<string, QueueItem>;
   onCancel?: (jobId: string) => void;
   onTogglePaused?: (jobId: string, paused: boolean) => void;
   onOpen?: (jobId: string) => void;
@@ -21,6 +23,8 @@ interface KanbanColumnProps {
 export function KanbanColumn({
   title,
   items,
+  jobById,
+  queueItemsByJobId,
   onCancel,
   onTogglePaused,
   onOpen,
@@ -54,6 +58,8 @@ export function KanbanColumn({
             <KanbanCard
               key={item.job.id}
               item={item}
+              jobById={jobById}
+              queueItem={queueItemsByJobId?.[item.job.id]}
               onCancel={onCancel}
               onTogglePaused={onTogglePaused}
               onOpen={onOpen}

@@ -128,7 +128,15 @@ function toHistoryJobResponse(item: HistoryItem): JobResponse {
 
 function detectFirstUrl(input: string): string | null {
   const match = input.match(/https?:\/\/[^\s)]+/);
-  return match?.[0] ?? null;
+  if (!match?.[0]) {
+    return null;
+  }
+  let candidate = match[0];
+  // Trim common trailing punctuation / quoting artifacts from chat output.
+  while (candidate.length > 0 && /[)\]}>.,;:'"!?]+$/.test(candidate)) {
+    candidate = candidate.replace(/[)\]}>.,;:'"!?]+$/, "");
+  }
+  return candidate || null;
 }
 
 function stringifyUnknownJson(value: unknown): string {
@@ -309,9 +317,11 @@ function FooterGlobeIcon({ className }: { className?: string }) {
 
 export default function App() {
   const [jobs, setJobs] = useState<Record<string, JobResponse>>({});
+  const [queueItemsByJobId, setQueueItemsByJobId] = useState<Record<string, QueueItem>>({});
   const [liveOutputByJob, setLiveOutputByJob] = useState<Record<string, string[]>>({});
   const [prompt, setPrompt] = useState("");
   const [selectedDependencyJobIds, setSelectedDependencyJobIds] = useState<string[]>([]);
+  const selectedDependencyJobIdsRef = useRef<string[]>([]);
   const [jobsHydratedFromBackend, setJobsHydratedFromBackend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
@@ -404,6 +414,7 @@ export default function App() {
     }
     // Replace cache with backend truth so fresh DB runs don't keep stale local jobs.
     setJobs(Object.fromEntries(entries));
+    setQueueItemsByJobId(Object.fromEntries(queue.map((item) => [item.job_id, item])));
     setJobsHydratedFromBackend(true);
     setBackendHealth("online");
     setError(null);
@@ -547,6 +558,10 @@ export default function App() {
 
   useOtterEvents({ onEvent: handleEvent });
 
+  useEffect(() => {
+    selectedDependencyJobIdsRef.current = selectedDependencyJobIds;
+  }, [selectedDependencyJobIds]);
+
   const handleEnqueue = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -610,6 +625,7 @@ export default function App() {
         setError("Captured audio is empty.");
         return;
       }
+      const dependencyJobIdsAtSubmit = selectedDependencyJobIdsRef.current;
       const dataUrl = await blobToDataUrl(audioBlob);
       setIsVoiceProcessing(true);
       setSubmitFeedback("Transcribing voice command...");
@@ -617,7 +633,7 @@ export default function App() {
       try {
         const response = await enqueueVoicePrompt(audioBlob, {
           workspace_id: undefined,
-          dependency_job_ids: selectedDependencyJobIds.length ? selectedDependencyJobIds : undefined
+          dependency_job_ids: dependencyJobIdsAtSubmit.length ? dependencyJobIdsAtSubmit : undefined
         });
         setVoiceTranscript(response.transcript);
         setPrompt(response.transcript);
@@ -630,7 +646,7 @@ export default function App() {
             job: response.job,
             output: null,
             queue_rank: null,
-            dependency_job_ids: selectedDependencyJobIds
+            dependency_job_ids: dependencyJobIdsAtSubmit
           }
         }));
         await refreshJobs();
@@ -641,7 +657,7 @@ export default function App() {
         setIsVoiceProcessing(false);
       }
     },
-    [refreshJobs, selectedDependencyJobIds]
+    [refreshJobs]
   );
 
   const handleRunWorkspaceCommand = async () => {
@@ -1343,6 +1359,7 @@ export default function App() {
         <div className="flex-1 min-h-0 overflow-hidden">
           <KanbanBoard
             jobs={jobList}
+            queueItemsByJobId={queueItemsByJobId}
             onCancel={handleCancel}
             onTogglePaused={handleTogglePaused}
             onOpen={setSelectedJobId}

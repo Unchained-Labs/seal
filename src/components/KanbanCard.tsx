@@ -1,8 +1,10 @@
-import type { JobResponse } from "../types";
+import type { JobResponse, QueueItem } from "../types";
 import { DoneIcon, FailedIcon, RunningIcon, TodoIcon } from "./icons";
 
 interface KanbanCardProps {
   item: JobResponse;
+  jobById?: Record<string, JobResponse>;
+  queueItem?: QueueItem;
   onCancel?: (jobId: string) => void;
   onTogglePaused?: (jobId: string, paused: boolean) => void;
   onOpen?: (jobId: string) => void;
@@ -35,6 +37,8 @@ function formatCreatedAt(iso: string): string {
 
 export function KanbanCard({
   item,
+  jobById,
+  queueItem,
   onCancel,
   onTogglePaused,
   onOpen,
@@ -48,6 +52,8 @@ export function KanbanCard({
 }: KanbanCardProps) {
   const { job, queue_rank } = item;
   const dependencyCount = item.dependency_job_ids.length;
+  const blockedByDeps = queueItem?.blocked_by_dependencies ?? false;
+  const unresolvedDepCount = queueItem?.unresolved_dependency_count ?? 0;
   const createdAtLabel = formatCreatedAt(job.created_at);
   const createdMs = Date.parse(job.created_at);
   const updatedMs = Date.parse(job.updated_at);
@@ -126,19 +132,46 @@ export function KanbanCard({
       </header>
       <p className="text-[11px] text-[var(--app-muted-text)]">Created: {createdAtLabel}</p>
       <div className="mt-1">
-        <span className={`app-status-bubble ${statusMeta.bubbleClass}`}>
-          {statusMeta.icon}
-          {statusMeta.label}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`app-status-bubble ${statusMeta.bubbleClass}`}>
+            {statusMeta.icon}
+            {statusMeta.label}
+          </span>
+          {job.status === "queued" && blockedByDeps ? (
+            <span className="app-status-bubble app-status-bubble--queued">
+              <TodoIcon className="h-4 w-4" />
+              Blocked by dependencies{unresolvedDepCount > 0 ? ` (${unresolvedDepCount})` : ""}
+            </span>
+          ) : null}
+        </div>
       </div>
       {statusMeta.durationLabel ? (
         <p className="mt-1 text-[11px] text-[var(--app-subtle)]">{statusMeta.durationLabel}</p>
       ) : null}
       {dependencyCount > 0 ? (
         <div className="mt-1">
-          <p className="text-[11px] text-[var(--app-subtle)]">
-            Dependencies ({dependencyCount}): {item.dependency_job_ids.map((id) => id.slice(0, 8)).join(", ")}
-          </p>
+          <p className="text-[11px] text-[var(--app-subtle)]">Dependencies ({dependencyCount})</p>
+          <div className="app-card-deps mt-1 flex flex-wrap gap-2">
+            {item.dependency_job_ids.map((dependencyId) => {
+              const dep = jobById?.[dependencyId];
+              const depLabelPrompt = dep?.job.prompt?.trim();
+              const promptSuffix = depLabelPrompt ? ` — ${depLabelPrompt.slice(0, 48)}` : "";
+              const statusPrefix = dep ? ` • ${dep.job.status}` : "";
+              return (
+                <button
+                  key={dependencyId}
+                  type="button"
+                  className="app-theme-toggle rounded px-2 py-1 text-[11px]"
+                  title={depLabelPrompt ?? dependencyId}
+                  onClick={() => onOpen?.(dependencyId)}
+                >
+                  {dependencyId.slice(0, 8)}
+                  {statusPrefix}
+                  {promptSuffix}
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
       {liveOutputPreview ? (

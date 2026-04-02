@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import type { JobResponse } from "../types";
+import type { JobResponse, QueueItem } from "../types";
 import { DoneIcon, FailedIcon, RunningIcon, TodoIcon } from "./icons";
 import { KanbanColumn } from "./KanbanColumn";
 
 interface KanbanBoardProps {
   jobs: JobResponse[];
+  queueItemsByJobId?: Record<string, QueueItem>;
   onCancel: (jobId: string) => void;
   onTogglePaused: (jobId: string, paused: boolean) => void;
   onOpen: (jobId: string) => void;
@@ -18,6 +19,7 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({
   jobs,
+  queueItemsByJobId,
   onCancel,
   onTogglePaused,
   onOpen,
@@ -28,17 +30,61 @@ export function KanbanBoard({
   onTodoDragStart,
   liveOutputPreviewForJob
 }: KanbanBoardProps) {
+  const jobById = useMemo(() => Object.fromEntries(jobs.map((item) => [item.job.id, item])), [jobs]);
   const [query, setQuery] = useState("");
+  const [relatedJobId, setRelatedJobId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"all" | "queued" | "running" | "done" | "failed">("all");
   const [voiceFilter, setVoiceFilter] = useState<"all" | "with_voice" | "without_voice">("all");
   const [sortMode, setSortMode] = useState<
     "workflow" | "created_desc" | "created_asc" | "updated_desc" | "updated_asc"
   >("workflow");
 
+  const relatedJobIds = useMemo(() => {
+    const root = relatedJobId.trim();
+    if (!root) {
+      return null;
+    }
+    const neighbors = new Map<string, Set<string>>();
+    const addEdge = (a: string, b: string) => {
+      if (!neighbors.has(a)) {
+        neighbors.set(a, new Set());
+      }
+      neighbors.get(a)?.add(b);
+    };
+    for (const item of jobs) {
+      for (const depId of item.dependency_job_ids) {
+        addEdge(item.job.id, depId);
+        addEdge(depId, item.job.id);
+      }
+    }
+    const seen = new Set<string>();
+    const queue: string[] = [root];
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || seen.has(current)) {
+        continue;
+      }
+      seen.add(current);
+      const next = neighbors.get(current);
+      if (!next) {
+        continue;
+      }
+      for (const neighbor of next) {
+        if (!seen.has(neighbor)) {
+          queue.push(neighbor);
+        }
+      }
+    }
+    return seen;
+  }, [jobs, relatedJobId]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matchesDone = (item: JobResponse) => item.job.status === "succeeded";
     return jobs.filter((item) => {
+      if (relatedJobIds && !relatedJobIds.has(item.job.id)) {
+        return false;
+      }
       if (q && !item.job.prompt.toLowerCase().includes(q)) {
         return false;
       }
@@ -69,7 +115,7 @@ export function KanbanBoard({
       }
       return true;
     });
-  }, [jobs, query, statusFilter, voiceFilter, hasVoiceForJob]);
+  }, [jobs, query, statusFilter, voiceFilter, hasVoiceForJob, relatedJobIds]);
 
   const sortItems = (items: JobResponse[]): JobResponse[] => {
     if (sortMode === "workflow") {
@@ -117,6 +163,21 @@ export function KanbanBoard({
         />
         <select
           className="app-input app-board-control"
+          value={relatedJobId}
+          onChange={(event) => setRelatedJobId(event.target.value)}
+        >
+          <option value="">All jobs</option>
+          {[...jobs]
+            .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
+            .slice(0, 120)
+            .map((item) => (
+              <option key={item.job.id} value={item.job.id}>
+                {item.job.id.slice(0, 8)} • {item.job.status} • {item.job.prompt.slice(0, 48)}
+              </option>
+            ))}
+        </select>
+        <select
+          className="app-input app-board-control"
           value={statusFilter}
           onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
         >
@@ -151,6 +212,7 @@ export function KanbanBoard({
           type="button"
           onClick={() => {
             setQuery("");
+            setRelatedJobId("");
             setStatusFilter("all");
             setVoiceFilter("all");
             setSortMode("workflow");
@@ -163,6 +225,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Todo"
           items={todo}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}
@@ -180,6 +244,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Running"
           items={running}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}
@@ -192,6 +258,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Done"
           items={done}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}
@@ -204,6 +272,8 @@ export function KanbanBoard({
         <KanbanColumn
           title="Blocked / Failed"
           items={blockedFailed}
+          jobById={jobById}
+          queueItemsByJobId={queueItemsByJobId}
           onCancel={onCancel}
           onTogglePaused={onTogglePaused}
           onOpen={onOpen}
