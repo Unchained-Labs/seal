@@ -42,6 +42,11 @@ function resolveOtterWsUrl(): string {
 
 const OTTER_URL = resolveOtterUrl();
 const OTTER_WS_URL = resolveOtterWsUrl();
+
+/** Base URL every Otter call uses, exported so the SSE stream resolves it identically. */
+export function resolveOtterBaseUrl(): string {
+  return OTTER_URL;
+}
 const SEAL_DEBUG = import.meta.env.DEV || import.meta.env.VITE_SEAL_DEBUG === "1";
 
 function logApi(message: string, extra?: Record<string, unknown>) {

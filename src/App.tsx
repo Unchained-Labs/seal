@@ -47,6 +47,8 @@ import type {
 type BackendHealth = "checking" | "online" | "offline";
 const JOB_CACHE_KEY = "seal-job-cache-v1";
 const VOICE_AUDIO_CACHE_KEY = "seal-voice-audio-v1";
+/** Window used to coalesce job refreshes triggered by streamed output chunks. */
+const JOB_REFRESH_COALESCE_MS = 400;
 
 type TerminalHistoryEntry = RuntimeTerminalEntry;
 
@@ -367,6 +369,7 @@ export default function App() {
   const refreshSequenceRef = useRef(0);
   const pushToTalkActiveRef = useRef(false);
   const seenCompletedEventsRef = useRef<Set<string>>(new Set());
+  const jobRefreshTimersRef = useRef<Map<string, number>>(new Map());
   const workspaceTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
   const modalTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
   const resultLiveStreamRef = useRef<HTMLPreElement | null>(null);
@@ -514,6 +517,59 @@ export default function App() {
     window.localStorage.setItem("seal-theme", theme);
   }, [theme]);
 
+  const fetchJobIntoState = useCallback((jobId: string) => {
+    void getJob(jobId)
+      .then((job) => {
+        setJobs((prev) => ({ ...prev, [jobId]: job }));
+      })
+      .catch(() => {
+        // Job may not be visible yet; ignore and wait for next event/poll.
+      });
+  }, []);
+
+  /**
+   * Refresh a job's detail record from an event.
+   *
+   * A running build streams one `output_chunk` per line of tool output, and
+   * fetching the job on every one of them turned a single build into thousands of
+   * `GET /v1/jobs/{id}` calls. Chunk-driven refreshes are coalesced into at most
+   * one request per job per interval; lifecycle events still refresh immediately
+   * so status transitions stay instant.
+   */
+  const scheduleJobRefresh = useCallback(
+    (jobId: string, coalesce: boolean) => {
+      const timers = jobRefreshTimersRef.current;
+      if (!coalesce) {
+        const pending = timers.get(jobId);
+        if (pending !== undefined) {
+          window.clearTimeout(pending);
+          timers.delete(jobId);
+        }
+        fetchJobIntoState(jobId);
+        return;
+      }
+      if (timers.has(jobId)) {
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        timers.delete(jobId);
+        fetchJobIntoState(jobId);
+      }, JOB_REFRESH_COALESCE_MS);
+      timers.set(jobId, timer);
+    },
+    [fetchJobIntoState]
+  );
+
+  useEffect(() => {
+    const timers = jobRefreshTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        window.clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
+
   const handleEvent = useCallback((event: OtterEventPayload) => {
     if (event.event_type === "output_chunk") {
       const payload = event.payload as { stream?: string; line?: string } | undefined;
@@ -547,14 +603,8 @@ export default function App() {
         }
       }
     }
-    void getJob(event.job_id)
-      .then((job) => {
-        setJobs((prev) => ({ ...prev, [event.job_id]: job }));
-      })
-      .catch(() => {
-        // Job may not be visible yet; ignore and wait for next event/poll.
-      });
-  }, []);
+    scheduleJobRefresh(event.job_id, event.event_type === "output_chunk");
+  }, [scheduleJobRefresh]);
 
   useOtterEvents({ onEvent: handleEvent });
 
