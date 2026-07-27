@@ -7,6 +7,7 @@ import type {
   RuntimeContainerInfo,
   RuntimeLaunchConfigRequest,
   RuntimeLogsResponse,
+  TaskAssessment,
   VoiceEnqueueResponse,
   Workspace,
   WorkspaceCommandRequest,
@@ -402,5 +403,35 @@ export async function updateQueuePriority(jobId: string, priority: number): Prom
     status: response.status,
     elapsedMs: Math.round(performance.now() - startedAt),
     priority
+  });
+}
+
+/** Score a prompt without enqueuing it, to preview what a task will cost. */
+export async function scorePrompt(
+  prompt: string,
+  options: { dependencyCount?: number; scopedToProjectPath?: boolean } = {}
+): Promise<TaskAssessment> {
+  return jsonRequest<TaskAssessment>("/v1/complexity/score", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      dependency_count: options.dependencyCount,
+      scoped_to_project_path: options.scopedToProjectPath
+    })
+  });
+}
+
+/** Override a job's heuristic score; the queue re-orders on the next claim. */
+export async function refineJobAssessment(
+  jobId: string,
+  complexity: number,
+  size: number,
+  confidence?: number
+): Promise<TaskAssessment> {
+  return jsonRequest<TaskAssessment>(`/v1/jobs/${jobId}/assessment`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ complexity, size, confidence })
   });
 }

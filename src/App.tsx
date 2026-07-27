@@ -14,6 +14,7 @@ import {
   restartRuntimeContainer,
   resumeJob,
   runWorkspaceCommand,
+  scorePrompt,
   setJobRuntimeLaunchConfig,
   startJobRuntimeLaunch,
   startRuntimeContainer,
@@ -36,12 +37,14 @@ import {
 import { RuntimeTerminal, type RuntimeTerminalEntry } from "./components/RuntimeTerminal";
 import { VoicePromptPlayer } from "./components/VoicePromptPlayer";
 import { type OtterEventPayload, useOtterEvents } from "./hooks/useOtterEvents";
+import { IntensityBadge } from "./components/IntensityBadge";
 import type {
   HistoryItem,
   JobResponse,
   QueueItem,
   RuntimeContainerInfo,
   RuntimeShellMessage,
+  TaskAssessment,
   WorkspaceCommandResponse
 } from "./types";
 type BackendHealth = "checking" | "online" | "offline";
@@ -49,6 +52,8 @@ const JOB_CACHE_KEY = "seal-job-cache-v1";
 const VOICE_AUDIO_CACHE_KEY = "seal-voice-audio-v1";
 /** Window used to coalesce job refreshes triggered by streamed output chunks. */
 const JOB_REFRESH_COALESCE_MS = 400;
+/** Idle time before the composer asks the backend to score the prompt. */
+const PROMPT_SCORE_DEBOUNCE_MS = 350;
 
 type TerminalHistoryEntry = RuntimeTerminalEntry;
 
@@ -66,29 +71,48 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null): JobResponse {
+/** Assessment fields default to unscored; queued items fill them in from the queue snapshot. */
+const UNSCORED = {
+  complexity: null,
+  task_size: null,
+  intensity: null,
+  complexity_band: null,
+  estimated_minutes: null,
+  assessment_confidence: null,
+  assessment: null
+} as const;
+
+function toQueuedJobResponse(queuedItem: QueueItem): JobResponse {
   return {
     job: {
-      id: jobId,
-      workspace_id: "",
-      prompt,
+      ...UNSCORED,
+      id: queuedItem.job_id,
+      workspace_id: queuedItem.workspace_id,
+      prompt: queuedItem.prompt,
       preview_url: null,
       project_path: null,
       runtime_start_command: null,
       runtime_stop_command: null,
       runtime_command_cwd: null,
-      is_paused: false,
+      is_paused: queuedItem.is_paused,
       status: "queued",
-      priority: rank ?? 100,
-      schedule_at: null,
+      priority: queuedItem.priority,
+      schedule_at: queuedItem.schedule_at,
       attempts: 0,
       max_attempts: 0,
       error: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      created_at: queuedItem.created_at,
+      updated_at: queuedItem.created_at,
+      // Carry the score from the queue snapshot so the board can show cost
+      // before the per-job hydration request lands.
+      complexity: queuedItem.complexity,
+      task_size: queuedItem.task_size,
+      intensity: queuedItem.intensity,
+      complexity_band: queuedItem.complexity_band,
+      estimated_minutes: queuedItem.estimated_minutes
     },
     output: null,
-    queue_rank: rank,
+    queue_rank: queuedItem.queue_rank,
     dependency_job_ids: []
   };
 }
@@ -96,6 +120,7 @@ function toQueuedJobResponse(jobId: string, prompt: string, rank: number | null)
 function toHistoryJobResponse(item: HistoryItem): JobResponse {
   return {
     job: {
+      ...UNSCORED,
       id: item.job_id,
       workspace_id: item.workspace_id,
       prompt: item.prompt,
@@ -370,6 +395,7 @@ export default function App() {
   const pushToTalkActiveRef = useRef(false);
   const seenCompletedEventsRef = useRef<Set<string>>(new Set());
   const jobRefreshTimersRef = useRef<Map<string, number>>(new Map());
+  const [promptAssessment, setPromptAssessment] = useState<TaskAssessment | null>(null);
   const workspaceTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
   const modalTerminalHistoryRef = useRef<HTMLDivElement | null>(null);
   const resultLiveStreamRef = useRef<HTMLPreElement | null>(null);
@@ -400,7 +426,7 @@ export default function App() {
         } catch {
           const queuedItem = queueById.get(jobId);
           if (queuedItem) {
-            return [jobId, toQueuedJobResponse(jobId, queuedItem.prompt, queuedItem.queue_rank)] as const;
+            return [jobId, toQueuedJobResponse(queuedItem)] as const;
           }
           const historyItem = historyById.get(jobId);
           if (historyItem) {
@@ -569,6 +595,36 @@ export default function App() {
       timers.clear();
     };
   }, []);
+
+  // Score the prompt as it is typed, so the cost of a task is visible before
+  // committing to it. Debounced because it is a network call on every keystroke
+  // otherwise; the request is aborted when the prompt changes underneath it.
+  useEffect(() => {
+    const trimmed = prompt.trim();
+    if (trimmed.length < 8) {
+      setPromptAssessment(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void scorePrompt(trimmed, { dependencyCount: selectedDependencyJobIds.length })
+        .then((assessment) => {
+          if (!cancelled) {
+            setPromptAssessment(assessment);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPromptAssessment(null);
+          }
+        });
+    }, PROMPT_SCORE_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [prompt, selectedDependencyJobIds.length]);
 
   const handleEvent = useCallback((event: OtterEventPayload) => {
     if (event.event_type === "output_chunk") {
@@ -1287,6 +1343,26 @@ export default function App() {
                         required={composerMode === "text"}
                       />
                     </div>
+                    {promptAssessment ? (
+                      <div className="app-estimate-row">
+                        <IntensityBadge
+                          band={promptAssessment.band}
+                          intensity={promptAssessment.intensity}
+                          estimatedMinutes={promptAssessment.estimated_minutes}
+                        />
+                        <span className="app-estimate-row__detail">
+                          complexity {promptAssessment.complexity}/10 · size {promptAssessment.size}/10
+                        </span>
+                        {promptAssessment.signals.length ? (
+                          <span className="app-estimate-row__signals">
+                            {promptAssessment.signals
+                              .slice(0, 3)
+                              .map((signal) => signal.detail)
+                              .join(" · ")}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="mt-3 flex justify-center">
                       <button
                         className="app-button-primary rounded-lg px-5 py-2.5 text-sm font-semibold"

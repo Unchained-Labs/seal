@@ -1,5 +1,6 @@
 import type { JobResponse, QueueItem } from "../types";
 import { DoneIcon, FailedIcon, RunningIcon, TodoIcon } from "./icons";
+import { IntensityBadge } from "./IntensityBadge";
 
 interface KanbanCardProps {
   item: JobResponse;
@@ -137,6 +138,12 @@ export function KanbanCard({
             {statusMeta.icon}
             {statusMeta.label}
           </span>
+          <IntensityBadge
+            band={job.complexity_band ?? queueItem?.complexity_band ?? null}
+            intensity={job.intensity ?? queueItem?.intensity ?? null}
+            estimatedMinutes={job.estimated_minutes ?? queueItem?.estimated_minutes ?? null}
+            effectiveIntensity={queueItem?.effective_intensity ?? null}
+          />
           {job.status === "queued" && blockedByDeps ? (
             <span className="app-status-bubble app-status-bubble--queued">
               <TodoIcon className="h-4 w-4" />

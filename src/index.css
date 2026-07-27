@@ -789,3 +789,96 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── Task intensity badge ────────────────────────────────────────────────── */
+/* Bands read as a temperature ramp, cool to warm, so relative cost is legible
+   at a glance without reading the label. */
+.app-intensity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-muted-border);
+  background: var(--app-card);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.app-intensity-badge__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex: none;
+}
+
+.app-intensity-badge__estimate {
+  opacity: 0.72;
+  font-weight: 500;
+}
+
+.app-intensity-badge__aged {
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.app-intensity-badge--compact {
+  padding: 0 0.375rem;
+}
+
+.app-intensity-badge--trivial {
+  color: #34d399;
+  border-color: color-mix(in srgb, #34d399 38%, transparent);
+  background: color-mix(in srgb, #34d399 12%, var(--app-card));
+}
+
+.app-intensity-badge--small {
+  color: #38bdf8;
+  border-color: color-mix(in srgb, #38bdf8 38%, transparent);
+  background: color-mix(in srgb, #38bdf8 12%, var(--app-card));
+}
+
+.app-intensity-badge--moderate {
+  color: #a78bfa;
+  border-color: color-mix(in srgb, #a78bfa 38%, transparent);
+  background: color-mix(in srgb, #a78bfa 12%, var(--app-card));
+}
+
+.app-intensity-badge--large {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #fbbf24 38%, transparent);
+  background: color-mix(in srgb, #fbbf24 14%, var(--app-card));
+}
+
+.app-intensity-badge--epic {
+  color: #fb7185;
+  border-color: color-mix(in srgb, #fb7185 40%, transparent);
+  background: color-mix(in srgb, #fb7185 14%, var(--app-card));
+}
+
+/* Live cost estimate under the composer. */
+.app-estimate-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  margin-top: 0.625rem;
+  padding: 0 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--app-subtle);
+}
+
+.app-estimate-row__detail {
+  font-variant-numeric: tabular-nums;
+}
+
+.app-estimate-row__signals {
+  color: var(--app-muted-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24rem;
+}

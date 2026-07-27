@@ -1,5 +1,26 @@
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
+/** Coarse label for a task assessment, matching otter-complexity's bands. */
+export type ComplexityBand = "trivial" | "small" | "moderate" | "large" | "epic";
+
+export interface AssessmentSignal {
+  kind: string;
+  detail: string;
+  weight: number;
+}
+
+/** A scored task, as returned by `POST /v1/complexity/score`. */
+export interface TaskAssessment {
+  complexity: number;
+  size: number;
+  intensity: number;
+  band: ComplexityBand;
+  estimated_minutes: number;
+  confidence: number;
+  source: "heuristic" | "refined";
+  signals: AssessmentSignal[];
+}
+
 export interface Job {
   id: string;
   workspace_id: string;
@@ -18,6 +39,13 @@ export interface Job {
   error: string | null;
   created_at: string;
   updated_at: string;
+  complexity: number | null;
+  task_size: number | null;
+  intensity: number | null;
+  complexity_band: ComplexityBand | null;
+  estimated_minutes: number | null;
+  assessment_confidence: number | null;
+  assessment: TaskAssessment | null;
 }
 
 export interface JobOutput {
@@ -47,6 +75,13 @@ export interface QueueItem {
   schedule_at: string | null;
   queue_rank: number;
   created_at: string;
+  complexity: number | null;
+  task_size: number | null;
+  intensity: number | null;
+  complexity_band: ComplexityBand | null;
+  estimated_minutes: number | null;
+  /** Intensity after ageing — what the scheduler actually orders on. */
+  effective_intensity: number | null;
 }
 
 export interface HistoryItem {
