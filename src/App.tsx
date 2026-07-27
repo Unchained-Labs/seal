@@ -1343,26 +1343,6 @@ export default function App() {
                         required={composerMode === "text"}
                       />
                     </div>
-                    {promptAssessment ? (
-                      <div className="app-estimate-row">
-                        <IntensityBadge
-                          band={promptAssessment.band}
-                          intensity={promptAssessment.intensity}
-                          estimatedMinutes={promptAssessment.estimated_minutes}
-                        />
-                        <span className="app-estimate-row__detail">
-                          complexity {promptAssessment.complexity}/10 · size {promptAssessment.size}/10
-                        </span>
-                        {promptAssessment.signals.length ? (
-                          <span className="app-estimate-row__signals">
-                            {promptAssessment.signals
-                              .slice(0, 3)
-                              .map((signal) => signal.detail)
-                              .join(" · ")}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
                     <div className="mt-3 flex justify-center">
                       <button
                         className="app-button-primary rounded-lg px-5 py-2.5 text-sm font-semibold"
@@ -1421,6 +1401,26 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                {promptAssessment ? (
+                  <div className="app-estimate-row">
+                    <IntensityBadge
+                      band={promptAssessment.band}
+                      intensity={promptAssessment.intensity}
+                      estimatedMinutes={promptAssessment.estimated_minutes}
+                    />
+                    <span className="app-estimate-row__detail">
+                      complexity {promptAssessment.complexity}/10 · size {promptAssessment.size}/10
+                    </span>
+                    {promptAssessment.signals.length ? (
+                      <span className="app-estimate-row__signals">
+                        {promptAssessment.signals
+                          .slice(0, 3)
+                          .map((signal) => signal.detail)
+                          .join(" · ")}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </form>
             {voiceTranscript ? (
