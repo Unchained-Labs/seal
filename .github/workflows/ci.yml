@@ -29,3 +29,30 @@ jobs:
 
       - name: Run pre-commit
         run: pre-commit run --all-files
+
+      # Lint alone never type-checks. Without this, a TypeScript error reaches
+      # main and only surfaces at deploy time.
+      - name: Typecheck and build
+        run: npm run build
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm ci
+
+      # The docs site deploys independently, so a broken link or bad config
+      # would otherwise only be caught by the hosting provider.
+      - name: Build docs
+        working-directory: docs
+        run: npm run build
