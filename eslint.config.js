@@ -4,7 +4,18 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
 export default tseslint.config(
-  { ignores: ["dist", "eslint.config.js", "postcss.config.cjs", "tailwind.config.ts"] },
+  {
+    // `docs/` is a self-contained VitePress project with its own toolchain and
+    // build output. Linting it with the application's config fails as soon as
+    // anyone has built the docs locally.
+    ignores: [
+      "dist",
+      "docs",
+      "eslint.config.js",
+      "postcss.config.cjs",
+      "tailwind.config.ts"
+    ]
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
